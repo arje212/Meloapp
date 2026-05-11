@@ -1,0 +1,38 @@
+{
+  "name": "Achievement",
+  "type": "object",
+  "properties": {
+    "user_email": {
+      "type": "string"
+    },
+    "user_name": {
+      "type": "string"
+    },
+    "achievement_key": {
+      "type": "string",
+      "description": "Unique key like first_post, first_mountain, etc."
+    },
+    "title": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "icon": {
+      "type": "string"
+    },
+    "xp_earned": {
+      "type": "number",
+      "default": 0
+    },
+    "badge_color": {
+      "type": "string",
+      "default": "gold"
+    }
+  },
+  "required": [
+    "user_email",
+    "achievement_key",
+    "title"
+  ]
+}

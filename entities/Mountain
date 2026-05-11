@@ -1,0 +1,118 @@
+{
+  "name": "Mountain",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Name of the mountain"
+    },
+    "location": {
+      "type": "string",
+      "description": "Province/Region location"
+    },
+    "latitude": {
+      "type": "number",
+      "description": "Latitude coordinate"
+    },
+    "longitude": {
+      "type": "number",
+      "description": "Longitude coordinate"
+    },
+    "elevation": {
+      "type": "number",
+      "description": "Elevation in meters above sea level"
+    },
+    "difficulty": {
+      "type": "string",
+      "enum": [
+        "beginner",
+        "intermediate",
+        "advanced",
+        "expert"
+      ],
+      "description": "Difficulty level"
+    },
+    "description": {
+      "type": "string",
+      "description": "Detailed description and hiking tips"
+    },
+    "image_url": {
+      "type": "string",
+      "description": "Main photo URL"
+    },
+    "gallery": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Gallery photo URLs"
+    },
+    "trail_class": {
+      "type": "number",
+      "description": "Trail class (1-5)"
+    },
+    "estimated_hours": {
+      "type": "number",
+      "description": "Estimated hours to summit"
+    },
+    "is_featured": {
+      "type": "boolean",
+      "default": false
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "open",
+        "closed",
+        "restricted"
+      ],
+      "default": "open"
+    },
+    "gpx_url": {
+      "type": "string",
+      "description": "GPX file URL for trail path"
+    },
+    "trail_waypoints": {
+      "type": "array",
+      "description": "Array of lat/lng waypoints for trail visualization",
+      "items": {
+        "type": "object",
+        "properties": {
+          "lat": {
+            "type": "number"
+          },
+          "lng": {
+            "type": "number"
+          },
+          "label": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "start",
+              "waypoint",
+              "summit",
+              "camp",
+              "water"
+            ]
+          }
+        }
+      }
+    },
+    "trailhead_lat": {
+      "type": "number",
+      "description": "Trailhead latitude"
+    },
+    "trailhead_lng": {
+      "type": "number",
+      "description": "Trailhead longitude"
+    }
+  },
+  "required": [
+    "name",
+    "location",
+    "elevation",
+    "difficulty"
+  ]
+}

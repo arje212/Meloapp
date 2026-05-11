@@ -1,0 +1,72 @@
+{
+  "name": "TourPackage",
+  "type": "object",
+  "properties": {
+    "agency_id": {
+      "type": "string"
+    },
+    "agency_name": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "mountain_id": {
+      "type": "string"
+    },
+    "mountain_name": {
+      "type": "string"
+    },
+    "price": {
+      "type": "number"
+    },
+    "currency": {
+      "type": "string",
+      "default": "PHP"
+    },
+    "includes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "What is included in the package"
+    },
+    "duration_days": {
+      "type": "number"
+    },
+    "max_pax": {
+      "type": "number"
+    },
+    "image_url": {
+      "type": "string"
+    },
+    "available_dates": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "inactive",
+        "sold_out"
+      ],
+      "default": "active"
+    },
+    "is_featured": {
+      "type": "boolean",
+      "default": false
+    }
+  },
+  "required": [
+    "agency_id",
+    "title",
+    "price",
+    "mountain_name"
+  ]
+}

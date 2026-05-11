@@ -1,0 +1,57 @@
+{
+  "name": "TripReview",
+  "type": "object",
+  "properties": {
+    "trip_id": {
+      "type": "string"
+    },
+    "trip_title": {
+      "type": "string"
+    },
+    "mountain_name": {
+      "type": "string"
+    },
+    "reviewer_email": {
+      "type": "string"
+    },
+    "reviewer_name": {
+      "type": "string"
+    },
+    "rating": {
+      "type": "number",
+      "description": "1-5 stars"
+    },
+    "content": {
+      "type": "string",
+      "description": "Detailed review text"
+    },
+    "photos": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Photo URLs"
+    },
+    "difficulty_actual": {
+      "type": "string",
+      "enum": [
+        "easier_than_expected",
+        "as_expected",
+        "harder_than_expected"
+      ]
+    },
+    "tips": {
+      "type": "string",
+      "description": "Tips for future hikers"
+    },
+    "xp_awarded": {
+      "type": "number",
+      "default": 0
+    }
+  },
+  "required": [
+    "trip_id",
+    "reviewer_email",
+    "rating"
+  ]
+}

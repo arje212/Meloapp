@@ -1,0 +1,66 @@
+{
+  "name": "Booking",
+  "type": "object",
+  "properties": {
+    "package_id": {
+      "type": "string"
+    },
+    "agency_id": {
+      "type": "string"
+    },
+    "agency_name": {
+      "type": "string"
+    },
+    "package_title": {
+      "type": "string"
+    },
+    "user_email": {
+      "type": "string"
+    },
+    "user_name": {
+      "type": "string"
+    },
+    "travel_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "num_pax": {
+      "type": "number",
+      "default": 1
+    },
+    "total_price": {
+      "type": "number"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "confirmed",
+        "paid",
+        "completed",
+        "cancelled",
+        "refunded"
+      ],
+      "default": "pending"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "payment_method": {
+      "type": "string",
+      "enum": [
+        "gcash",
+        "bank_transfer",
+        "cash",
+        "credit_card"
+      ],
+      "default": "gcash"
+    }
+  },
+  "required": [
+    "package_id",
+    "agency_id",
+    "user_email",
+    "total_price"
+  ]
+}

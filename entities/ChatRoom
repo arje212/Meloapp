@@ -1,0 +1,49 @@
+{
+  "name": "ChatRoom",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "direct",
+        "group",
+        "agency"
+      ],
+      "default": "direct"
+    },
+    "participants": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Array of participant emails"
+    },
+    "participant_names": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "last_message": {
+      "type": "string"
+    },
+    "last_message_time": {
+      "type": "string"
+    },
+    "trip_id": {
+      "type": "string",
+      "description": "Associated trip ID for group chats"
+    },
+    "agency_id": {
+      "type": "string",
+      "description": "Associated agency for agency chats"
+    }
+  },
+  "required": [
+    "type",
+    "participants"
+  ]
+}

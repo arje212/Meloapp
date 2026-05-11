@@ -1,0 +1,75 @@
+{
+  "name": "Trip",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Trip name"
+    },
+    "description": {
+      "type": "string"
+    },
+    "mountain_id": {
+      "type": "string"
+    },
+    "mountain_name": {
+      "type": "string"
+    },
+    "start_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "end_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "max_participants": {
+      "type": "number",
+      "default": 10
+    },
+    "organizer_name": {
+      "type": "string"
+    },
+    "organizer_email": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "planning",
+        "open",
+        "full",
+        "completed",
+        "cancelled"
+      ],
+      "default": "planning"
+    },
+    "itinerary": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "time": {
+            "type": "string"
+          },
+          "activity": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "budget_estimate": {
+      "type": "number"
+    },
+    "is_public": {
+      "type": "boolean",
+      "default": true
+    }
+  },
+  "required": [
+    "title",
+    "mountain_name",
+    "start_date",
+    "organizer_email"
+  ]
+}
