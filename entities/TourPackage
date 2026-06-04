@@ -8,6 +8,12 @@
     "agency_name": {
       "type": "string"
     },
+    "owner_id": {
+      "type": "string"
+    },
+    "owner_email": {
+      "type": "string"
+    },
     "title": {
       "type": "string"
     },
@@ -42,6 +48,57 @@
     },
     "image_url": {
       "type": "string"
+    },
+    "package_photos": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "URLs of location photos to showcase the package"
+    },
+    "nature_spots": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Nature spots or itinerary stops"
+    },
+    "open_for": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Who this package is for (e.g., Solo Travelers, Couples, Barkada)"
+    },
+    "pickup_locations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Available pickup points"
+    },
+    "dropoff_locations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Available dropoff points"
+    },
+    "other_pickup_locations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Additional pickup options with notes"
+    },
+    "promo_text": {
+      "type": "string",
+      "description": "Promotional text like '13+1 FREE'"
+    },
+    "allow_custom_dates": {
+      "type": "boolean",
+      "default": true,
+      "description": "Allow users to request custom dates"
     },
     "available_dates": {
       "type": "array",

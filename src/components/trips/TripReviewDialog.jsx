@@ -4,8 +4,9 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { base44 } from '@/api/base44Client';
+import { supabase } from '@/api/supabaseClient';
 import { useAuth } from '@/lib/AuthContext';
+import { uploadFile } from '@/lib/uploadFile';
 import { Star, Loader2, Upload } from 'lucide-react';
 import { unlockAchievement } from '@/lib/achievements';
 
@@ -30,15 +31,20 @@ export default function TripReviewDialog({ trip, open, onOpenChange, onReviewed 
     const files = Array.from(e.target.files);
     if (!files.length) return;
     setUploading(true);
-    const urls = await Promise.all(files.slice(0, 3).map(f => base44.integrations.Core.UploadFile({ file: f }).then(r => r.file_url)));
-    setPhotos(prev => [...prev, ...urls].slice(0, 3));
-    setUploading(false);
+    try {
+      const urls = await Promise.all(files.slice(0, 3).map(f => uploadFile(f, 'trip-reviews')));
+      setPhotos(prev => [...prev, ...urls].slice(0, 3));
+    } catch (err) {
+      console.error('Upload failed:', err);
+    } finally {
+      setUploading(false);
+    }
   };
 
   const handleSubmit = async () => {
     if (!rating) return;
     setSubmitting(true);
-    await base44.entities.TripReview.create({
+    const { error } = await supabase.from('trip_reviews').insert({
       trip_id: trip.id,
       trip_title: trip.title,
       mountain_name: trip.mountain_name,
@@ -47,10 +53,11 @@ export default function TripReviewDialog({ trip, open, onOpenChange, onReviewed 
       rating,
       content,
       tips,
-      difficulty_actual: difficulty || undefined,
+      difficulty_actual: difficulty || null,
       photos,
       xp_awarded: xpEarned,
     });
+    if (error) { console.error(error); setSubmitting(false); return; }
     await unlockAchievement(user.email, user.full_name, 'trip_reviewer', {
       title: 'Trail Writer',
       description: 'Submitted a trip review',
@@ -64,7 +71,7 @@ export default function TripReviewDialog({ trip, open, onOpenChange, onReviewed 
   };
 
   return (
-    <Dialog open={open} onOpenChange={v => { if (!submitting) { onOpenChange(v); } }}>
+    <Dialog open={open} onOpenChange={v => { if (!submitting) onOpenChange(v); }}>
       <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{done ? 'Review Submitted!' : `Review: ${trip?.title}`}</DialogTitle>
@@ -79,7 +86,6 @@ export default function TripReviewDialog({ trip, open, onOpenChange, onReviewed 
           </div>
         ) : (
           <div className="space-y-4">
-            {/* Star rating */}
             <div>
               <Label>Overall Rating <span className="text-destructive">*</span></Label>
               <div className="flex gap-1 mt-1">
@@ -118,7 +124,7 @@ export default function TripReviewDialog({ trip, open, onOpenChange, onReviewed 
               <label className="flex items-center gap-2 mt-1 p-3 border-2 border-dashed rounded-xl cursor-pointer hover:bg-muted text-sm text-muted-foreground">
                 <Upload className="w-4 h-4" />
                 {uploading ? 'Uploading...' : photos.length > 0 ? `${photos.length} photo(s) added` : 'Add photos'}
-                <input type="file" accept="image/*" multiple className="hidden" onChange={handleUpload} disabled={photos.length >= 3} />
+                <input type="file" accept="image/*" multiple className="hidden" onChange={handleUpload} disabled={photos.length >= 3 || uploading} />
               </label>
               {photos.length > 0 && (
                 <div className="flex gap-2 mt-2">

@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Loader2, Mountain, Mail, Lock, Eye, EyeOff } from 'lucide-react';
+import { Loader2, Compass, Mail, Lock, Eye, EyeOff } from 'lucide-react';
 
 export default function Login() {
   const [tab, setTab] = useState('login');
@@ -55,10 +55,10 @@ export default function Login() {
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <div className="w-20 h-20 rounded-full bg-amber-500 flex items-center justify-center mx-auto mb-4 shadow-lg">
-            <Mountain className="w-10 h-10 text-white" />
+            <Compass className="w-10 h-10 text-white" />
           </div>
           <h1 className="font-display text-2xl font-bold">
-            Welcome to <span className="text-primary">SummitPilipinas</span>
+            Welcome to <span className="text-primary">Melotrip</span>
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             {tab === 'login' ? 'Sign in to continue' : 'Create your account'}
@@ -84,8 +84,9 @@ export default function Login() {
           <div className="space-y-3">
             {tab === 'signup' && (
               <div>
-                <Label>Full Name</Label>
+                <Label htmlFor="signup-full-name">Full Name</Label>
                 <Input
+                  id="signup-full-name"
                   placeholder="Juan dela Cruz"
                   value={fullName}
                   onChange={e => setFullName(e.target.value)}
@@ -94,10 +95,11 @@ export default function Login() {
               </div>
             )}
             <div>
-              <Label>Email</Label>
+              <Label htmlFor="auth-email">Email</Label>
               <div className="relative mt-1">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
+                  id="auth-email"
                   type="email"
                   placeholder="you@example.com"
                   value={email}
@@ -107,10 +109,11 @@ export default function Login() {
               </div>
             </div>
             <div>
-              <Label>Password</Label>
+              <Label htmlFor="auth-password">Password</Label>
               <div className="relative mt-1">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
+                  id="auth-password"
                   type={showPass ? 'text' : 'password'}
                   placeholder="••••••••"
                   value={password}

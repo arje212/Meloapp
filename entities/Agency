@@ -54,6 +54,14 @@
     "total_bookings": {
       "type": "number",
       "default": 0
+    },
+    "gcash_number": {
+      "type": "string",
+      "description": "Agency GCash account number for receiving payments"
+    },
+    "gcash_name": {
+      "type": "string",
+      "description": "GCash account holder name"
     }
   },
   "required": [

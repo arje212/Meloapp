@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Trophy, X } from 'lucide-react';
+import { X } from 'lucide-react';
 
 export default function AchievementPopup({ achievement, onClose }) {
   useEffect(() => {

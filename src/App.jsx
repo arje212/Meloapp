@@ -22,6 +22,7 @@ import AgencyDetail from '@/pages/AgencyDetail';
 import Chat from '@/pages/Chat';
 import ChatRoom from '@/pages/ChatRoom';
 import Profile from '@/pages/Profile';
+import PublicProfile from '@/pages/PublicProfile'; // ✅ bagong import
 
 // Admin
 import AdminDashboard from '@/pages/admin/AdminDashboard';
@@ -33,6 +34,7 @@ import AdminBookings from '@/pages/admin/AdminBookings';
 import AdminTrips from '@/pages/admin/AdminTrips';
 import AdminPosts from '@/pages/admin/AdminPosts';
 import AdminSubscriptions from '@/pages/admin/AdminSubscriptions';
+import AdminCollectibles from '@/pages/admin/AdminCollectibles';
 
 // Feature pages
 import RoadmapPage from '@/pages/Roadmap';
@@ -57,14 +59,22 @@ const AuthenticatedApp = () => {
       <div className="fixed inset-0 flex items-center justify-center bg-background">
         <div className="text-center">
           <div className="w-10 h-10 border-4 border-primary/20 border-t-primary rounded-full animate-spin mx-auto mb-3"></div>
-          <p className="text-sm text-muted-foreground">Loading Lakbay Bundok...</p>
+          <p className="text-sm text-muted-foreground">Loading Melotrip...</p>
         </div>
       </div>
     );
   }
 
+  // Public routes - accessible without authentication
+  const publicRoutes = (
+    <Routes>
+      <Route path="/profile/:id" element={<PublicProfile />} />
+      <Route path="*" element={isAuthenticated ? null : <Login />} />
+    </Routes>
+  );
+
   if (!isAuthenticated) {
-    return <Login />;
+    return publicRoutes;
   }
 
   return (
@@ -81,6 +91,7 @@ const AuthenticatedApp = () => {
         <Route path="/chat" element={<Chat />} />
         <Route path="/chat/:id" element={<ChatRoom />} />
         <Route path="/profile" element={<Profile />} />
+        <Route path="/profile/:id" element={<PublicProfile />} />
         <Route path="/roadmap" element={<RoadmapPage />} />
         <Route path="/achievements" element={<AchievementsPage />} />
         <Route path="/notifications" element={<NotificationsPage />} />
@@ -99,6 +110,7 @@ const AuthenticatedApp = () => {
         <Route path="/admin/trips" element={<AdminTrips />} />
         <Route path="/admin/posts" element={<AdminPosts />} />
         <Route path="/admin/subscriptions" element={<AdminSubscriptions />} />
+        <Route path="/admin/collectibles" element={<AdminCollectibles />} />
       </Route>
 
       <Route path="*" element={<PageNotFound />} />
@@ -110,7 +122,7 @@ function App() {
   return (
     <AuthProvider>
       <QueryClientProvider client={queryClientInstance}>
-        <Router>
+        <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <AuthenticatedApp />
         </Router>
         <Toaster />

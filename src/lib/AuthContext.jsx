@@ -7,6 +7,30 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
+  const [onlineUsers, setOnlineUsers] = useState([]);
+
+  // Declared first so the useEffects below can reference it
+  const loadProfile = async (authUser) => {
+    try {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', authUser.id)
+        .single();
+
+      const merged = profile
+        ? { ...authUser, ...profile }
+        : { ...authUser, role: 'user', full_name: authUser.user_metadata?.full_name };
+
+      setUser(merged);
+      setIsAuthenticated(true);
+    } catch (e) {
+      setUser({ ...authUser, role: 'user' });
+      setIsAuthenticated(true);
+    } finally {
+      setIsLoadingAuth(false);
+    }
+  };
 
   useEffect(() => {
     // Check initial session
@@ -33,27 +57,50 @@ export const AuthProvider = ({ children }) => {
     return () => subscription.unsubscribe();
   }, []);
 
-  const loadProfile = async (authUser) => {
-    try {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', authUser.id)
-        .single();
-
-      const merged = profile
-        ? { ...authUser, ...profile }
-        : { ...authUser, role: 'user', full_name: authUser.user_metadata?.full_name };
-
-      setUser(merged);
-      setIsAuthenticated(true);
-    } catch (e) {
-      setUser({ ...authUser, role: 'user' });
-      setIsAuthenticated(true);
-    } finally {
-      setIsLoadingAuth(false);
+  useEffect(() => {
+    if (!user?.email) {
+      setOnlineUsers([]);
+      return undefined;
     }
-  };
+
+    const channel = supabase.channel('online-users', {
+      config: { presence: { key: user.email } },
+    });
+
+    const syncPresence = () => {
+      const state = channel.presenceState();
+      const users = Object.values(state)
+        .flat()
+        .filter(Boolean)
+        .map((presence) => ({
+          email: presence.email,
+          name: presence.name || presence.email,
+          role: presence.role || 'user',
+          onlineAt: presence.onlineAt,
+        }))
+        .filter((presence, index, list) =>
+          presence.email && list.findIndex(item => item.email === presence.email) === index
+        );
+      setOnlineUsers(users);
+    };
+
+    channel
+      .on('presence', { event: 'sync' }, syncPresence)
+      .subscribe(async (status) => {
+        if (status !== 'SUBSCRIBED') return;
+        await channel.track({
+          email: user.email,
+          name: user.full_name || user.email,
+          role: user.role || 'user',
+          onlineAt: new Date().toISOString(),
+        });
+      });
+
+    return () => {
+      channel.untrack();
+      supabase.removeChannel(channel);
+    };
+  }, [user?.email, user?.full_name, user?.role]);
 
   const logout = async () => {
     await supabase.auth.signOut();
@@ -68,6 +115,7 @@ export const AuthProvider = ({ children }) => {
       authError: null,
       appPublicSettings: null,
       authChecked: !isLoadingAuth,
+      onlineUsers,
       logout,
       navigateToLogin: () => {},
       checkUserAuth: () => {},

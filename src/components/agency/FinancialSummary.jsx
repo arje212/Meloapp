@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { TrendingUp, Clock, CheckCircle, XCircle, DollarSign, BookOpen } from 'lucide-react';
+import { TrendingUp, Clock, CheckCircle, DollarSign, BookOpen } from 'lucide-react';
 
 export default function FinancialSummary({ bookings = [], packages = [] }) {
   const stats = useMemo(() => {

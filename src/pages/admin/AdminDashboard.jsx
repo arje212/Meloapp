@@ -1,8 +1,6 @@
-import { useQuery } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
 import { useAuth } from '@/lib/AuthContext';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { BarChart3, Users, Mountain, Store, Package, CalendarDays, MessageSquare, CreditCard, ArrowLeft } from 'lucide-react';
+import { BarChart3, Users, Mountain, Store, Package, CalendarDays, MessageSquare, CreditCard, ArrowLeft, WalletCards } from 'lucide-react';
 
 const adminLinks = [
   { path: '/admin', label: 'Overview', icon: BarChart3 },
@@ -10,6 +8,7 @@ const adminLinks = [
   { path: '/admin/mountains', label: 'Mountains', icon: Mountain },
   { path: '/admin/agencies', label: 'Agencies', icon: Store },
   { path: '/admin/subscriptions', label: 'Subscriptions', icon: CreditCard },
+  { path: '/admin/collectibles', label: 'Collectibles', icon: WalletCards },
   { path: '/admin/bookings', label: 'Bookings', icon: Package },
   { path: '/admin/trips', label: 'Trips', icon: CalendarDays },
   { path: '/admin/posts', label: 'Posts', icon: MessageSquare },

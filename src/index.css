@@ -93,3 +93,61 @@
     @apply font-sans;
   }
 }
+
+/* Map and gamification animations */
+.animated-trail {
+  stroke-dasharray: 8 6;
+  stroke-linecap: round;
+  animation: dash-move 3s linear infinite;
+}
+
+.glow-trail {
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 6px rgba(29,158,117,0.75));
+  stroke-width: 4px;
+}
+
+.glow-trail-outer {
+  stroke-linecap: round;
+  filter: blur(6px) drop-shadow(0 0 12px rgba(29,158,117,0.55));
+}
+
+.emoji-marker {
+  display: inline-block;
+  transform-origin: center bottom;
+  animation: float-bounce 3s ease-in-out infinite;
+  text-shadow: 0 6px 18px rgba(0,0,0,0.35);
+}
+.emoji-marker.conquered { transform: scale(1.05); }
+
+@keyframes dash-move {
+  to { stroke-dashoffset: -1000; }
+}
+
+@keyframes float-bounce {
+  0%,100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}.roadmap-hero-glow {
+  background: radial-gradient(circle at top center, rgba(16,185,129,0.22), transparent 55%);
+}
+
+.glow-panel {
+  box-shadow: 0 28px 80px rgba(15, 23, 42, 0.12);
+}
+
+.achievement-badge {
+  transition: transform .2s ease, box-shadow .2s ease;
+}
+
+.achievement-badge:hover {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 16px 32px rgba(15, 23, 42, 0.12);
+}
+
+.community-share {
+  transition: transform .2s ease, color .2s ease;
+}
+
+.community-share:hover {
+  transform: translateY(-1px);
+}

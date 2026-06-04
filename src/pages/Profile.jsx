@@ -9,12 +9,12 @@ import { Label } from '@/components/ui/label';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { Mountain, CalendarDays, MapPin, Settings, LogOut, Loader2, Store, Users, CreditCard, Trophy, Bell, Star, UserCheck, LayoutDashboard } from 'lucide-react';
+import { Mountain, CalendarDays, MapPin, Settings, LogOut, Loader2, Store, Users, CreditCard, Trophy, Bell, Star, UserCheck, LayoutDashboard, Map, Wallet, Receipt } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import PostCard from '@/components/feed/PostCard';
 import CommentsSheet from '@/components/feed/CommentsSheet';
 import TripReviewDialog from '@/components/trips/TripReviewDialog';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { calcLevel } from '@/lib/achievements';
 
 const bookingStatusColors = {
@@ -29,6 +29,7 @@ const bookingStatusColors = {
 export default function Profile() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState({ bio: user?.bio || '', location: user?.location || '' });
   const [isSaving, setIsSaving] = useState(false);
@@ -36,9 +37,9 @@ export default function Profile() {
   const [reviewTrip, setReviewTrip] = useState(null);
 
   const { data: myPosts = [] } = useQuery({
-    queryKey: ['my-posts', user?.email],
-    queryFn: () => base44.entities.Post.filter({ author_email: user.email, status: 'active' }, '-created_date'),
-    enabled: !!user?.email,
+    queryKey: ['my-posts', user?.id],
+    queryFn: () => base44.entities.Post.filter({ author_id: user?.id }, '-created_date'),
+    enabled: !!user?.id,
   });
 
   const { data: myTrips = [] } = useQuery({
@@ -251,11 +252,18 @@ export default function Profile() {
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue="posts">
-        <TabsList className="w-full grid grid-cols-5 h-auto p-1">
+      <Tabs defaultValue="posts" onValueChange={(value) => {
+        if (value === 'roadmap') {
+          navigate('/roadmap');
+        }
+      }}>
+        <TabsList className="w-full grid grid-cols-6 h-auto p-1">
           <TabsTrigger value="posts" className="text-xs py-1.5">Posts</TabsTrigger>
           <TabsTrigger value="trips" className="text-xs py-1.5">Trips</TabsTrigger>
           <TabsTrigger value="bookings" className="text-xs py-1.5">Bookings</TabsTrigger>
+          <TabsTrigger value="roadmap" className="text-xs py-1.5">
+            <Map className="w-3 h-3 sm:mr-1" /><span className="hidden sm:inline">Roadmap</span>
+          </TabsTrigger>
           <TabsTrigger value="following" className="text-xs py-1.5">
             <UserCheck className="w-3 h-3 sm:mr-1" /><span className="hidden sm:inline">Following</span>
           </TabsTrigger>
@@ -337,22 +345,82 @@ export default function Profile() {
               <div className="flex items-start justify-between gap-2">
                 <div className="flex-1 min-w-0">
                   <h3 className="font-semibold text-sm truncate">{b.package_title}</h3>
-                  <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5"><Store className="w-3 h-3 shrink-0" />{b.agency_name}</p>
+
+                  {/* Agency name — clickable link to agency page */}
+                  {b.agency_id ? (
+                    <Link
+                      to={`/agencies/${b.agency_id}`}
+                      className="text-xs text-primary flex items-center gap-1 mt-0.5 hover:underline"
+                    >
+                      <Store className="w-3 h-3 shrink-0" />{b.agency_name}
+                    </Link>
+                  ) : (
+                    <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                      <Store className="w-3 h-3 shrink-0" />{b.agency_name}
+                    </p>
+                  )}
                 </div>
-                <span className={`text-xs px-2 py-0.5 rounded-full border font-medium capitalize shrink-0 ${bookingStatusColors[b.status] || 'bg-muted text-muted-foreground'}`}>{b.status}</span>
+                <span className={`text-xs px-2 py-0.5 rounded-full border font-medium capitalize shrink-0 ${bookingStatusColors[b.status] || 'bg-muted text-muted-foreground'}`}>
+                  {b.status}
+                </span>
               </div>
+
               <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-xs text-muted-foreground">
-                {b.travel_date && <span className="flex items-center gap-1"><CalendarDays className="w-3 h-3" />{b.travel_date}</span>}
-                {b.num_pax && <span className="flex items-center gap-1"><Users className="w-3 h-3" />{b.num_pax} pax</span>}
-                {b.payment_method && <span className="flex items-center gap-1"><CreditCard className="w-3 h-3" />{b.payment_method.replace('_', ' ')}</span>}
+                {b.travel_date && (
+                  <span className="flex items-center gap-1"><CalendarDays className="w-3 h-3" />{b.travel_date}</span>
+                )}
+                {b.num_pax && (
+                  <span className="flex items-center gap-1"><Users className="w-3 h-3" />{b.num_pax} pax</span>
+                )}
+                {b.payment_method && (
+                  <span className="flex items-center gap-1"><CreditCard className="w-3 h-3" />{b.payment_method.replace('_', ' ')}</span>
+                )}
               </div>
-              <div className="flex items-center justify-between mt-2 pt-2 border-t">
-                <p className="text-base font-bold text-primary">₱{b.total_price?.toLocaleString()}</p>
-                {b.status === 'pending' && <p className="text-xs text-muted-foreground">Awaiting confirmation</p>}
+
+              {/* Price + downpayment breakdown */}
+              <div className="mt-2 pt-2 border-t space-y-1">
+                <div className="flex items-center justify-between">
+                  <p className="text-base font-bold text-primary">₱{b.total_price?.toLocaleString()}</p>
+                  {b.status === 'pending' && (
+                    <p className="text-xs text-muted-foreground">Awaiting confirmation</p>
+                  )}
+                </div>
+
+                {b.downpayment_amount && (
+                  <div className="flex flex-wrap gap-x-3 text-xs">
+                    <span className="text-green-700 flex items-center gap-1">
+                      <Wallet className="w-3 h-3" />
+                      DP: ₱{b.downpayment_amount.toLocaleString()}
+                    </span>
+                    {b.balance_amount > 0 && (
+                      <span className="text-amber-700">
+                        Balance on meetup: ₱{b.balance_amount.toLocaleString()}
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
+
+              {/* DP receipt thumbnail */}
+              {b.dp_receipt_url && (
+                <div className="mt-2 rounded-xl overflow-hidden border border-emerald-200">
+                  <img
+                    src={b.dp_receipt_url}
+                    alt="Downpayment receipt"
+                    className="w-full h-20 object-cover object-top"
+                  />
+                  <div className="px-3 py-1 bg-emerald-50 flex items-center gap-1.5 text-xs text-emerald-800">
+                    <Receipt className="w-3 h-3 shrink-0" />
+                    Downpayment receipt submitted
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </TabsContent>
+
+        {/* Roadmap */}
+        <TabsContent value="roadmap" className="mt-3" />
 
         {/* Following */}
         <TabsContent value="following" className="mt-3">
@@ -411,7 +479,7 @@ export default function Profile() {
           {myAchievements.length === 0 ? (
             <div className="text-center py-10">
               <Trophy className="w-10 h-10 text-muted-foreground/30 mx-auto mb-2" />
-              <p className="text-sm text-muted-foreground">No achievements yet. Start hiking!</p>
+              <p className="text-sm text-muted-foreground">No achievements yet. Start exploring!</p>
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-2 sm:gap-3">

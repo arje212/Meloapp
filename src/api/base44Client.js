@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase';
 export const base44 = {
   entities: {
     Post: API.Posts,
+    Comment: API.Comments,
     Mountain: API.Mountains,
     Trip: API.Trips,
     Agency: API.Agencies,

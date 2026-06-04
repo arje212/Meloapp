@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -21,20 +21,7 @@ async function fetchTrips() {
   const { data, error } = await supabase
     .from('trips')
     .select(`
-      id,
-      organizer_id,
-      mountain_name,
-      title,
-      description,
-      start_date,
-      end_date,
-      max_participants,
-      current_participants,
-      difficulty,
-      price,
-      status,
-      is_public,
-      created_date,
+      *,
       profiles (
         full_name,
         email,
@@ -82,8 +69,8 @@ export default function Trips() {
     <div className="max-w-4xl mx-auto px-4 py-6">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="font-display text-2xl md:text-3xl font-bold">Hiking Trips</h1>
-          <p className="text-muted-foreground text-sm">Plan and join group adventures</p>
+          <h1 className="font-display text-2xl md:text-3xl font-bold">Trips</h1>
+          <p className="text-muted-foreground text-sm">Plan and join beach, city, mountain, and group adventures</p>
         </div>
         <Button className="rounded-full" onClick={() => navigate('/trips/new')}>
           <Plus className="w-4 h-4 mr-2" /> New Trip
@@ -105,13 +92,14 @@ export default function Trips() {
         <div className="text-center py-16">
           <CalendarDays className="w-16 h-16 text-muted-foreground/30 mx-auto mb-4" />
           <h3 className="font-semibold mb-1">No trips yet</h3>
-          <p className="text-sm text-muted-foreground mb-4">Create your first hiking trip!</p>
+          <p className="text-sm text-muted-foreground mb-4">Create your first travel plan!</p>
           <Button variant="outline" onClick={() => navigate('/trips/new')}>Create Trip</Button>
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
           {filtered.map(trip => {
-            const organizerName = trip.profiles?.full_name || trip.profiles?.email || 'Unknown';
+            const organizerName = trip.agency_name || trip.organizer_name || trip.profiles?.full_name || trip.profiles?.email || 'Unknown';
+            const organizerLabel = trip.agency_name ? `by agency ${trip.agency_name}` : `by ${organizerName}`;
             return (
               <Link key={trip.id} to={`/trips/${trip.id}`}>
                 <div className="bg-card border rounded-2xl p-5 hover:shadow-md transition-all">
@@ -135,7 +123,7 @@ export default function Trips() {
                   </div>
                   {/* ✅ organizer name from profiles JOIN */}
                   <p className="text-xs text-muted-foreground mt-3">
-                    by {organizerName}
+                    {organizerLabel}
                   </p>
                 </div>
               </Link>

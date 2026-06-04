@@ -28,8 +28,8 @@ export default function Mountains() {
   return (
     <div className="max-w-6xl mx-auto px-4 py-6">
       <div className="mb-6">
-        <h1 className="font-display text-2xl md:text-3xl font-bold mb-1">Explore Mountains</h1>
-        <p className="text-muted-foreground text-sm">Discover {mountains.length} mountains across the Philippines</p>
+        <h1 className="font-display text-2xl md:text-3xl font-bold mb-1">Explore Destinations</h1>
+        <p className="text-muted-foreground text-sm">Discover {mountains.length} mountains now, with beaches and city trips coming into the same flow</p>
       </div>
 
       {/* Filters */}
@@ -37,7 +37,7 @@ export default function Mountains() {
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
-            placeholder="Search mountains or locations..."
+            placeholder="Search destinations or locations..."
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="pl-10 rounded-full"
@@ -72,7 +72,7 @@ export default function Mountains() {
       ) : filtered.length === 0 ? (
         <div className="text-center py-16">
           <Mountain className="w-16 h-16 text-muted-foreground/30 mx-auto mb-4" />
-          <h3 className="font-semibold mb-1">No mountains found</h3>
+          <h3 className="font-semibold mb-1">No destinations found</h3>
           <p className="text-sm text-muted-foreground">Try adjusting your search or filters</p>
         </div>
       ) : viewMode === 'map' ? (

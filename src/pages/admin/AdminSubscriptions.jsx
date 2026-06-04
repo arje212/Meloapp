@@ -1,9 +1,11 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Loader2, CheckCircle, XCircle, ExternalLink } from 'lucide-react';
+import { Loader2, CheckCircle, XCircle, ExternalLink, AlertCircle } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
+import { supabase } from '@/lib/supabase';
 
 const statusColors = {
   pending: 'bg-yellow-100 text-yellow-700',
@@ -12,42 +14,107 @@ const statusColors = {
   expired: 'bg-gray-100 text-gray-600',
 };
 
-const PLAN_DURATIONS = { weekly: 7, monthly: 30, yearly: 365 };
+const isMissingColumnError = (error) => {
+  const message = `${error?.message || ''} ${error?.details || ''}`;
+  return error?.code === 'PGRST204' || /column .* does not exist|could not find .* column/i.test(message);
+};
+
+const findMissingColumn = (error) => {
+  const message = `${error?.message || ''} ${error?.details || ''}`;
+  return message.match(/'([^']+)' column/i)?.[1] ||
+    message.match(/column "([^"]+)"/i)?.[1] ||
+    null;
+};
 
 export default function AdminSubscriptions() {
   const qc = useQueryClient();
+  const [actionError, setActionError] = useState('');
 
   const { data: subs = [], isLoading } = useQuery({
     queryKey: ['admin-subs'],
     queryFn: () => base44.entities.AgencySubscription.list('-created_date', 100),
   });
 
-  const updateMutation = useMutation({
-    mutationFn: ({ id, data }) => base44.entities.AgencySubscription.update(id, data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-subs'] }),
-  });
+  const updateSubscription = async (id, data) => {
+    let payload = { ...data };
 
-  const approve = (sub) => {
-    const start = new Date();
-    const end = new Date();
-    end.setDate(end.getDate() + PLAN_DURATIONS[sub.plan]);
-    updateMutation.mutate({
-      id: sub.id,
-      data: {
-        status: 'verified',
-        start_date: start.toISOString().split('T')[0],
-        end_date: end.toISOString().split('T')[0],
-      },
-    });
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const { error } = await supabase
+        .from('agency_subscriptions')
+        .update(payload)
+        .eq('id', id);
+      if (!error) return;
+
+      const missingColumn = findMissingColumn(error);
+      if (!isMissingColumnError(error) || !missingColumn || !(missingColumn in payload)) {
+        throw error;
+      }
+
+      const { [missingColumn]: _removed, ...rest } = payload;
+      payload = rest;
+    }
+
+    throw new Error('Unable to update subscription because the table schema does not match the app fields.');
   };
 
-  const reject = (id) => updateMutation.mutate({ id, data: { status: 'rejected' } });
+  const updateAgency = async (id, data) => {
+    if (!id) return;
+    const { error } = await supabase
+      .from('agencies')
+      .update(data)
+      .eq('id', id);
+    if (error) throw error;
+  };
+
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ['admin-subs'] });
+    qc.invalidateQueries({ queryKey: ['my-subs'] });
+    qc.invalidateQueries({ queryKey: ['my-agency'] });
+    qc.invalidateQueries({ queryKey: ['admin-agencies'] });
+  };
+
+  const approve = async (sub) => {
+    setActionError('');
+    try {
+      await updateSubscription(sub.id, { status: 'verified' });
+      try {
+        await updateAgency(sub.agency_id, {
+          status: 'approved',
+          is_verified: true,
+        });
+      } catch (agencyError) {
+        console.warn('Subscription approved, but agency verification update failed:', agencyError);
+      }
+      refresh();
+    } catch (error) {
+      setActionError(error.message || 'Unable to approve subscription.');
+    }
+  };
+
+  const reject = async (id) => {
+    setActionError('');
+    try {
+      await updateSubscription(id, { status: 'rejected' });
+      refresh();
+    } catch (error) {
+      setActionError(error.message || 'Unable to reject subscription.');
+    }
+  };
 
   if (isLoading) return <div className="flex justify-center py-16"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
 
   return (
     <div>
       <h2 className="text-xl font-semibold mb-4">Agency Subscriptions</h2>
+      {actionError && (
+        <div className="mb-4 flex gap-2 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            <p className="font-medium">Action failed</p>
+            <p className="text-xs">{actionError}</p>
+          </div>
+        </div>
+      )}
       <div className="bg-card border rounded-2xl overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-muted">

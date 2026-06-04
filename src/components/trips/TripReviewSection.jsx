@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
+import { supabase } from '@/api/supabaseClient';
 import { useAuth } from '@/lib/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -14,20 +14,12 @@ function StarRating({ value, onChange, size = 5 }) {
   const [hover, setHover] = useState(0);
   return (
     <div className="flex gap-1">
-      {[1, 2, 3, 4, 5].map(s => (
-        <button
-          key={s}
-          type="button"
-          onClick={() => onChange?.(s)}
+      {[1,2,3,4,5].map(s => (
+        <button key={s} type="button" onClick={() => onChange?.(s)}
           onMouseEnter={() => onChange && setHover(s)}
           onMouseLeave={() => onChange && setHover(0)}
-          className={onChange ? 'cursor-pointer' : 'cursor-default'}
-        >
-          <Star
-            className={`w-${size} h-${size} transition-colors ${
-              s <= (hover || value) ? 'text-yellow-400 fill-yellow-400' : 'text-muted-foreground/30'
-            }`}
-          />
+          className={onChange ? 'cursor-pointer' : 'cursor-default'}>
+          <Star className={`w-${size} h-${size} transition-colors ${s <= (hover || value) ? 'text-yellow-400 fill-yellow-400' : 'text-muted-foreground/30'}`} />
         </button>
       ))}
     </div>
@@ -47,20 +39,30 @@ export default function TripReviewSection({ trip, members = [] }) {
 
   const { data: reviews = [] } = useQuery({
     queryKey: ['trip-reviews', trip?.id],
-    queryFn: () => base44.entities.TripReview.filter({ trip_id: trip.id }),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('trip_reviews')
+        .select('*')
+        .eq('trip_id', trip.id)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return data;
+    },
     enabled: !!trip?.id,
   });
 
   const myReview = reviews.find(r => r.reviewer_email === user?.email);
   const isMember = members.some(m => m.user_email === user?.email && m.status === 'going');
-  const avgRating = reviews.length > 0 ? (reviews.reduce((s, r) => s + (r.rating || 0), 0) / reviews.length).toFixed(1) : null;
+  const avgRating = reviews.length > 0
+    ? (reviews.reduce((s, r) => s + (r.rating || 0), 0) / reviews.length).toFixed(1)
+    : null;
   const displayedReviews = showAll ? reviews : reviews.slice(0, 3);
 
   const handleSubmit = async () => {
     if (!rating) return;
     setSaving(true);
     const xp = 20 + (content.length > 100 ? 15 : 0) + (tips ? 10 : 0) + (difficulty ? 5 : 0);
-    await base44.entities.TripReview.create({
+    const { error } = await supabase.from('trip_reviews').insert({
       trip_id: trip.id,
       trip_title: trip.title,
       mountain_name: trip.mountain_name,
@@ -68,10 +70,11 @@ export default function TripReviewSection({ trip, members = [] }) {
       reviewer_name: user.full_name,
       rating,
       content,
-      difficulty_actual: difficulty || undefined,
-      tips: tips || undefined,
+      difficulty_actual: difficulty || null,
+      tips: tips || null,
       xp_awarded: xp,
     });
+    if (error) { console.error(error); setSaving(false); return; }
     unlockAchievement(user.email, user.full_name, 'first_review');
     qc.invalidateQueries({ queryKey: ['trip-reviews', trip.id] });
     setShowForm(false);
@@ -81,7 +84,6 @@ export default function TripReviewSection({ trip, members = [] }) {
 
   return (
     <div className="bg-card border rounded-2xl p-5 mt-4">
-      {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
           <h3 className="font-semibold">Reviews</h3>
@@ -100,7 +102,6 @@ export default function TripReviewSection({ trip, members = [] }) {
         )}
       </div>
 
-      {/* Write Review Form */}
       {showForm && (
         <div className="bg-muted rounded-xl p-4 mb-4 space-y-3">
           <div>
@@ -135,7 +136,6 @@ export default function TripReviewSection({ trip, members = [] }) {
         </div>
       )}
 
-      {/* My review badge */}
       {myReview && (
         <div className="bg-primary/5 border border-primary/20 rounded-lg px-3 py-2 mb-3 flex items-center gap-2 text-xs text-primary">
           <Star className="w-3.5 h-3.5 fill-primary" />
@@ -143,7 +143,6 @@ export default function TripReviewSection({ trip, members = [] }) {
         </div>
       )}
 
-      {/* Reviews list */}
       {reviews.length === 0 ? (
         <p className="text-sm text-muted-foreground text-center py-4">No reviews yet. {isMember ? 'Be the first!' : ''}</p>
       ) : (
@@ -158,7 +157,9 @@ export default function TripReviewSection({ trip, members = [] }) {
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="text-sm font-semibold">{r.reviewer_name}</p>
                     <StarRating value={r.rating} size={3} />
-                    <span className="text-xs text-muted-foreground">{formatDistanceToNow(new Date(r.created_date), { addSuffix: true })}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {r.created_at ? formatDistanceToNow(new Date(r.created_at), { addSuffix: true }) : ''}
+                    </span>
                   </div>
                   {r.difficulty_actual && (
                     <span className="text-xs text-muted-foreground">

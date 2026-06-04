@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "5009a8da-b684-47d4-9f19-4a5b7e37ded4"
+      }
+    },
+    "android": {
+      "package": "com.melotrip.app"
+    }
+  }
+}

@@ -7,6 +7,27 @@ const parseSort = (sort = '') => ({
   ascending: !sort.startsWith('-')
 });
 
+const compactPayload = (payload) => Object.fromEntries(
+  Object.entries(payload || {}).filter(([, value]) => value !== undefined)
+);
+
+const isMissingColumnError = (error) => {
+  const message = `${error?.message || ''} ${error?.details || ''}`;
+  return error?.code === 'PGRST204' || /column .* does not exist|could not find .* column/i.test(message);
+};
+
+const findMissingColumn = (error) => {
+  const message = `${error?.message || ''} ${error?.details || ''}`;
+  return message.match(/'([^']+)' column/i)?.[1] ||
+    message.match(/column "([^"]+)"/i)?.[1] ||
+    null;
+};
+
+const withoutColumn = (payload, column) => {
+  const { [column]: _removed, ...rest } = payload;
+  return rest;
+};
+
 // Generic helpers
 const list = async (table, sort, limit = 100, select = '*') => {
   const { column, ascending } = parseSort(sort);
@@ -18,7 +39,10 @@ const list = async (table, sort, limit = 100, select = '*') => {
 const filter = async (table, filters = {}, sort, limit = 100, select = '*') => {
   const { column, ascending } = parseSort(sort);
   let query = db(table).select(select).order(column, { ascending }).limit(limit);
-  Object.entries(filters).forEach(([k, v]) => { query = query.eq(k, v); });
+  Object.entries(filters).forEach(([k, v]) => {
+    if (v === undefined) return;
+    query = Array.isArray(v) ? query.in(k, v) : query.eq(k, v);
+  });
   const { data, error } = await query;
   if (error) throw error;
   return data || [];
@@ -31,15 +55,39 @@ const get = async (table, id) => {
 };
 
 const create = async (table, payload) => {
-  const { data, error } = await db(table).insert(payload).select().single();
-  if (error) throw error;
-  return data;
+  let nextPayload = compactPayload(payload);
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const { data, error } = await db(table).insert(nextPayload).select().single();
+    if (!error) return data;
+
+    const missingColumn = findMissingColumn(error);
+    if (!isMissingColumnError(error) || !missingColumn || !(missingColumn in nextPayload)) {
+      throw error;
+    }
+
+    nextPayload = withoutColumn(nextPayload, missingColumn);
+  }
+
+  throw new Error(`Unable to create ${table}: schema mismatch.`);
 };
 
 const update = async (table, id, payload) => {
-  const { data, error } = await db(table).update(payload).eq('id', id).select().single();
-  if (error) throw error;
-  return data;
+  let nextPayload = compactPayload(payload);
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const { data, error } = await db(table).update(nextPayload).eq('id', id).select().single();
+    if (!error) return data;
+
+    const missingColumn = findMissingColumn(error);
+    if (!isMissingColumnError(error) || !missingColumn || !(missingColumn in nextPayload)) {
+      throw error;
+    }
+
+    nextPayload = withoutColumn(nextPayload, missingColumn);
+  }
+
+  throw new Error(`Unable to update ${table}: schema mismatch.`);
 };
 
 const remove = async (table, id) => {
@@ -58,7 +106,8 @@ const entity = (table, defaultSelect = '*') => ({
 });
 
 // All tables use created_date
-export const Posts = entity('posts');
+export const Posts = entity('posts', '*, profiles(full_name,email,avatar_url)');
+export const Comments = entity('comments');
 export const Mountains = entity('mountains');
 export const Trips = entity('trips');
 export const Agencies = entity('agencies');

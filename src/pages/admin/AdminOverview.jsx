@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Users, Mountain, Store, Package, CalendarDays, MessageSquare, TrendingUp, DollarSign } from 'lucide-react';
+import { Users, Mountain, Store, Package, CalendarDays, MessageSquare, DollarSign } from 'lucide-react';
 
 export default function AdminOverview() {
   const { data: users = [] } = useQuery({ queryKey: ['admin-users'], queryFn: () => base44.entities.User.list('-created_date') });

@@ -15,7 +15,6 @@ const difficultyColors = {
 
 export default function MountainDetail() {
   const navigate = useNavigate();
-  const params = new URLSearchParams(window.location.search);
   const id = window.location.pathname.split('/mountains/')[1];
 
   const { data: mountain, isLoading } = useQuery({

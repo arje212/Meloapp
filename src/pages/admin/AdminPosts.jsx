@@ -46,8 +46,8 @@ export default function AdminPosts() {
             {posts.map(p => (
               <TableRow key={p.id}>
                 <TableCell className="max-w-xs truncate text-sm">{p.content}</TableCell>
-                <TableCell className="text-sm">{p.author_name}</TableCell>
-                <TableCell>{p.like_count || 0}</TableCell>
+                <TableCell className="text-sm">{p.profiles?.full_name || p.author_email || p.author_id || '-'}</TableCell>
+                <TableCell>{p.likes_count || 0}</TableCell>
                 <TableCell><Badge className={statusColors[p.status] || ''}>{p.status}</Badge></TableCell>
                 <TableCell className="text-sm">{format(new Date(p.created_date), 'MMM d')}</TableCell>
                 <TableCell>

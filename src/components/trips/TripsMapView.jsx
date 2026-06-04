@@ -1,7 +1,6 @@
-import { useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
-import L from 'leaflet';
 import { Link } from 'react-router-dom';
+import L from 'leaflet';
 import { format } from 'date-fns';
 import 'leaflet/dist/leaflet.css';
 
@@ -49,7 +48,7 @@ export default function TripsMapView({ trips, mountains }) {
                 <p className="text-xs text-gray-500">{trip.mountain_name}</p>
                 {trip.start_date && <p className="text-xs text-gray-500 mt-1">{format(new Date(trip.start_date), 'MMM d, yyyy')}</p>}
                 <p className="text-xs mt-1 capitalize font-medium" style={{ color: statusColor[trip.status] }}>{trip.status}</p>
-                <a href={`/trips/${trip.id}`} className="text-xs text-blue-600 underline block mt-1">View details →</a>
+                <Link to={`/trips/${trip.id}`} className="text-xs text-blue-600 underline block mt-1">View details →</Link>
               </div>
             </Popup>
           </Marker>
