@@ -36,8 +36,6 @@ export default function TripPaymentMonitor({ trip, members = [], isOrganizer }) 
   const [viewingReceipt, setViewingReceipt] = useState(null);
   const [expanded, setExpanded] = useState(true);
 
-  if (!isOrganizer || !trip?.payment_required) return null;
-
   // All payments for this trip
   const { data: payments = [], isLoading } = useQuery({
     queryKey: ['trip-payments-all', trip?.id],
@@ -52,6 +50,9 @@ export default function TripPaymentMonitor({ trip, members = [], isOrganizer }) 
     },
     enabled: !!trip?.id && isOrganizer,
   });
+
+  // (early return placed AFTER all hooks so hook order is stable between renders)
+  if (!isOrganizer || !trip?.payment_required) return null;
 
   // Going members who haven't submitted a payment record yet
   const goingMembers = members.filter(m => m.status === 'going');

@@ -6,23 +6,28 @@ import { Badge } from '@/components/ui/badge';
 import { Search, MapPin, Star, Loader2, Store, CheckCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { useAgencyPlans } from '@/lib/useAgencyPlans';
+import { planRank } from '@/lib/plans';
+import PlanBadge from '@/components/agencies/PlanBadge';
 
 export default function Agencies() {
   const [search, setSearch] = useState('');
 
   const { data: agencies = [], isLoading } = useQuery({
     queryKey: ['agencies'],
-    queryFn: () => base44.entities.Agency.filter({ status: 'approved' }),
+    queryFn: () => base44.entities.Agency.filter({ status: 'approved' }, '-created_date', 1000),
   });
+  const { data: plans = {} } = useAgencyPlans();
 
   const { data: packages = [] } = useQuery({
     queryKey: ['packages'],
-    queryFn: () => base44.entities.TourPackage.filter({ status: 'active' }),
+    queryFn: () => base44.entities.TourPackage.filter({ status: 'active' }, '-created_date', 1000),
   });
 
-  const filtered = agencies.filter(a =>
-    !search || a.name?.toLowerCase().includes(search.toLowerCase()) || a.location?.toLowerCase().includes(search.toLowerCase())
-  );
+  // Paid plans are listed first (Yearly > Pro > Starter > Free), then by rating.
+  const filtered = agencies
+    .filter(a => !search || a.name?.toLowerCase().includes(search.toLowerCase()) || a.location?.toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => planRank(plans[b.id]) - planRank(plans[a.id]) || (Number(b.rating) || 0) - (Number(a.rating) || 0));
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6">
@@ -67,6 +72,7 @@ export default function Agencies() {
                     <div className="flex items-center gap-2">
                       <h3 className="font-semibold text-base">{agency.name}</h3>
                       {agency.is_verified && <CheckCircle className="w-4 h-4 text-primary fill-primary/20" />}
+                      <PlanBadge plan={plans[agency.id]} className="ml-auto" />
                     </div>
                     {agency.location && (
                       <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">

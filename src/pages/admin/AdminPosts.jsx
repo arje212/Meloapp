@@ -17,7 +17,7 @@ export default function AdminPosts() {
   const queryClient = useQueryClient();
   const { data: posts = [], isLoading } = useQuery({
     queryKey: ['admin-posts'],
-    queryFn: () => base44.entities.Post.list('-created_date', 200),
+    queryFn: () => base44.entities.Post.list('-created_date', 1000),
   });
 
   const handleStatus = async (id, status) => {

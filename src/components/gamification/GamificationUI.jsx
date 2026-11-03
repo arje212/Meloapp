@@ -16,7 +16,7 @@ export function AchievementPopup({ achievement, onDismiss }) {
       });
       
       // Auto-dismiss after 4 seconds
-      const timer = setTimeout(onDismiss, 4000);
+      const timer = setTimeout(() => onDismiss?.(), 4000);
       return () => clearTimeout(timer);
     }
   }, [achievement, onDismiss]);

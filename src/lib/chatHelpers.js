@@ -1,4 +1,5 @@
 import { format, isToday, isYesterday } from 'date-fns';
+import { supabase } from '@/lib/supabase';
 
 export function dateSeparatorLabel(dateStr) {
   const d = new Date(dateStr);
@@ -77,3 +78,37 @@ export function getInitials(name = '') {
 }
 
 export const REACTIONS_LIST = ['❤️', '😂', '😮', '😢', '😡', '👍'];
+
+
+/**
+ * Load ONLY the rooms the user participates in (server-side filter), newest first,
+ * instead of "latest 100 rooms of everyone, then filter in the browser".
+ * Same `.contains('participants', [...])` pattern AppLayout already uses.
+ * Optionally attaches `_unread` (count of unread messages from others) per room.
+ */
+export async function fetchMyChatRooms(email, { withUnread = false, limit = 300 } = {}) {
+  if (!email) return [];
+  const { data, error } = await supabase
+    .from('chat_rooms')
+    .select('*')
+    .contains('participants', [email])
+    .order('updated_date', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  const rooms = data || [];
+  if (!withUnread || rooms.length === 0) return rooms;
+
+  try {
+    const { data: unreadRows } = await supabase
+      .from('chat_messages')
+      .select('room_id')
+      .neq('sender_email', email)
+      .eq('is_read', false)
+      .in('room_id', rooms.map((r) => r.id));
+    const counts = {};
+    (unreadRows || []).forEach((m) => { counts[m.room_id] = (counts[m.room_id] || 0) + 1; });
+    return rooms.map((r) => ({ ...r, _unread: counts[r.id] || 0 }));
+  } catch {
+    return rooms;
+  }
+}

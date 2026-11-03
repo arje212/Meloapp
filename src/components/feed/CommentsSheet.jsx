@@ -7,9 +7,11 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/AuthContext';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
+import { syncCommentsCount } from '@/lib/postCounts';
+import { notifyUser } from '@/lib/notify';
 
 // ── Comment Item ──────────────────────────────────────────────────────────────
-function CommentItem({ c }) {
+function CommentItem({ c, onReply }) {
   const [liked, setLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(c.likes_count || 0);
 
@@ -38,8 +40,8 @@ function CommentItem({ c }) {
         </div>
         <div className="flex items-center gap-3 mt-1 ml-1">
           <span className="text-[10px] text-muted-foreground">
-            {c.created_at
-              ? formatDistanceToNow(new Date(c.created_at), { addSuffix: true })
+            {(c.created_at || c.created_date)
+              ? formatDistanceToNow(new Date(c.created_at || c.created_date), { addSuffix: true })
               : 'just now'}
           </span>
           <button
@@ -50,7 +52,7 @@ function CommentItem({ c }) {
             {liked ? 'Liked' : 'Like'}
             {likeCount > 0 && <span className="text-[10px]">· {likeCount}</span>}
           </button>
-          <button className="text-[11px] font-semibold text-muted-foreground hover:text-foreground transition-colors">
+          <button type="button" onClick={() => onReply?.(c)} className="text-[11px] font-semibold text-muted-foreground hover:text-foreground transition-colors">
             Reply
           </button>
         </div>
@@ -69,17 +71,25 @@ export default function CommentsSheet({ post, open, onOpenChange }) {
   const inputRef = useRef(null);
   const queryClient = useQueryClient();
 
-  const { data: comments = [], isLoading } = useQuery({
+  const { data: comments = [], isLoading, isError, error: loadError, refetch } = useQuery({
     queryKey: ['comments', post?.id],
+    retry: 1,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('comments')
-        .select('id, post_id, content, author_name, created_at, likes_count, user_id, profiles(avatar_url)')
-        .eq('post_id', post.id)
-        .order('created_at', { ascending: true });
-
+      // `select *` and no table join: the old query named fixed columns (created_at, likes_count) and joined
+      // profiles, and any mismatch with the real table made the whole list fail silently (endless spinner).
+      const { data, error } = await supabase.from('comments').select('*').eq('post_id', post.id);
       if (error) throw error;
-      return data || [];
+      const rows = data || [];
+      const ids = [...new Set(rows.map((r) => r.user_id).filter(Boolean))];
+      const avatars = {};
+      if (ids.length) {
+        const { data: profs } = await supabase.from('profiles').select('id, avatar_url').in('id', ids);
+        (profs || []).forEach((pr) => { avatars[pr.id] = pr.avatar_url; });
+      }
+      const when = (r) => String(r.created_at || r.created_date || '');
+      return rows
+        .map((r) => ({ ...r, profiles: { avatar_url: avatars[r.user_id] || null } }))
+        .sort((x, y) => when(x).localeCompare(when(y)));
     },
     enabled: !!post?.id && open,
     refetchOnWindowFocus: false,
@@ -99,6 +109,13 @@ export default function CommentsSheet({ post, open, onOpenChange }) {
       setSendError('');
     }
   }, [open]);
+
+  // Reply: starts the comment with @name and puts the cursor in the box
+  const handleReply = (c) => {
+    const who = (c.author_name || '').split(' ')[0];
+    if (who) setText(`@${who} `);
+    setTimeout(() => inputRef.current?.focus(), 50);
+  };
 
   const handleSend = async () => {
     const trimmed = text.trim();
@@ -120,24 +137,31 @@ export default function CommentsSheet({ post, open, onOpenChange }) {
 
       if (commentError) throw commentError;
 
-      // 2. Increment comments_count on the post
-      const { data: currentPost } = await supabase
-        .from('posts')
-        .select('comments_count')
-        .eq('id', post.id)
-        .single();
+      // 2. Recompute comments_count from the comments table (no stale read-modify-write)
+      const freshCount = await syncCommentsCount(post.id);
 
-      await supabase
-        .from('posts')
-        .update({ comments_count: (currentPost?.comments_count || 0) + 1 })
-        .eq('id', post.id);
+      // 3. Let the post author know
+      notifyUser({
+        toEmail: post.profiles?.email,
+        fromEmail: user.email,
+        title: 'New comment on your post',
+        message: `${user.full_name || user.email}: ${trimmed.slice(0, 80)}`,
+        type: 'comment',
+        link: '/',
+        icon: '\uD83D\uDCAC',
+      });
 
       setText('');
       queryClient.invalidateQueries({ queryKey: ['comments', post.id] });
-      queryClient.invalidateQueries({ queryKey: ['posts'] });
+      // update the number on the post in place - invalidating ['posts'] reloaded the whole feed
+      queryClient.setQueriesData({ queryKey: ['posts'] }, (old) =>
+        old?.pages
+          ? { ...old, pages: old.pages.map((pg) => ({ ...pg, posts: (pg.posts || []).map((p) =>
+              p.id === post.id ? { ...p, comments_count: freshCount ?? (p.comments_count || 0) + 1 } : p) })) }
+          : old);
     } catch (err) {
       console.error('Comment send error:', err);
-      setSendError('Failed to send. Please try again.');
+      setSendError(`Failed to send. Please try again.${err?.message ? ` (${String(err.message).slice(0, 120)})` : ''}`);
     } finally {
       setIsSending(false);
     }
@@ -173,7 +197,14 @@ export default function CommentsSheet({ post, open, onOpenChange }) {
               <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
             </div>
           )}
-          {!isLoading && comments.length === 0 && (
+          {isError && (
+            <div className="text-center py-10 space-y-2">
+              <p className="text-sm font-semibold">Could not load the comments</p>
+              <p className="text-xs text-muted-foreground break-words">{String(loadError?.message || '').slice(0, 160)}</p>
+              <button type="button" onClick={() => refetch()} className="text-xs font-semibold text-primary underline">Try again</button>
+            </div>
+          )}
+          {!isLoading && !isError && comments.length === 0 && (
             <div className="text-center py-10">
               <MessageCircle className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
               <p className="text-sm font-semibold mb-1">No comments yet</p>
@@ -181,7 +212,7 @@ export default function CommentsSheet({ post, open, onOpenChange }) {
             </div>
           )}
           {comments.map(c => (
-            <CommentItem key={c.id} c={c} />
+            <CommentItem key={c.id} c={c} onReply={handleReply} />
           ))}
           <div ref={bottomRef} />
         </div>

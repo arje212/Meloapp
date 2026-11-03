@@ -2,6 +2,9 @@ import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { useAuth } from '@/lib/AuthContext';
+import { uploadFile } from '@/lib/uploadFile';
+import { supabase } from '@/lib/supabase';
+import { notifyUser } from '@/lib/notify';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -9,7 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { Mountain, CalendarDays, MapPin, Settings, LogOut, Loader2, Store, Users, CreditCard, Trophy, Bell, Star, UserCheck, LayoutDashboard, Map, Wallet, Receipt } from 'lucide-react';
+import { Mountain, CalendarDays, MapPin, Settings, LogOut, Loader2, Store, Users, CreditCard, Trophy, Bell, Star, UserCheck, LayoutDashboard, Map, Wallet, Receipt, Camera } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import PostCard from '@/components/feed/PostCard';
 import CommentsSheet from '@/components/feed/CommentsSheet';
@@ -27,14 +30,28 @@ const bookingStatusColors = {
 };
 
 export default function Profile() {
-  const { user } = useAuth();
+  const { user, checkUserAuth } = useAuth();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [busyBookingId, setBusyBookingId] = useState(null);
+  const [saveError, setSaveError] = useState('');
   const [editOpen, setEditOpen] = useState(false);
-  const [editForm, setEditForm] = useState({ bio: user?.bio || '', location: user?.location || '' });
+  const [editForm, setEditForm] = useState({ bio: user?.bio || '', location: user?.location || '', full_name: user?.full_name || '', avatar_url: user?.avatar_url || '' });
   const [isSaving, setIsSaving] = useState(false);
   const [commentPost, setCommentPost] = useState(null);
   const [reviewTrip, setReviewTrip] = useState(null);
+
+  const { data: savedPosts = [] } = useQuery({
+    queryKey: ['saved-posts', user?.id],
+    enabled: !!user?.id,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('saved_posts').select('post_id, created_date').eq('user_id', user.id).order('created_date', { ascending: false }).limit(100);
+      if (error) throw error;
+      const ids = (data || []).map((r) => r.post_id);
+      return ids.length ? base44.entities.Post.filter({ id: ids }, '-created_date', 100) : [];
+    },
+  });
 
   const { data: myPosts = [] } = useQuery({
     queryKey: ['my-posts', user?.id],
@@ -103,11 +120,83 @@ export default function Profile() {
   const { level, percent, xpInLevel, xpNeeded } = calcLevel(totalXp);
   const initials = user?.full_name?.split(' ').map(n => n[0]).join('').slice(0, 2) || '?';
 
+  const notifyAgencyOwner = async (b, title, message) => {
+    try {
+      const { data: ag } = await supabase.from('agencies').select('owner_email').eq('id', b.agency_id).maybeSingle();
+      await notifyUser({ toEmail: ag?.owner_email, fromEmail: user.email, title, message, type: 'booking', link: '/agency-dashboard', icon: '\uD83D\uDCCB' });
+    } catch (err) { console.warn('Agency notification failed:', err); }
+  };
+
+  // Only PENDING bookings can be cancelled here. Confirmed bookings involve a down payment, so the
+  // user is told to message the agency instead (no refund rules are invented).
+  const handleCancelBooking = async (b) => {
+    if (b.status !== 'pending') return;
+    if (!window.confirm(`Cancel your booking for "${b.package_title}"?`)) return;
+    setBusyBookingId(b.id);
+    try {
+      await base44.entities.Booking.update(b.id, { status: 'cancelled' });
+      await notifyAgencyOwner(b, 'Booking cancelled by guest', `${user.full_name || user.email} cancelled "${b.package_title}"${b.travel_date ? ` (${b.travel_date})` : ''}.`);
+      queryClient.invalidateQueries({ queryKey: ['my-bookings', user?.email] });
+    } catch (err) {
+      console.error('Cancel booking failed:', err);
+      alert('Could not cancel the booking. Please try again.');
+    } finally {
+      setBusyBookingId(null);
+    }
+  };
+
+  const handleUploadDpReceipt = async (b, file) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/') || file.size > 5 * 1024 * 1024) { alert('Choose an image up to 5MB.'); return; }
+    setBusyBookingId(b.id);
+    try {
+      const url = await uploadFile(file, 'dp-receipts');
+      await base44.entities.Booking.update(b.id, { dp_receipt_url: url });
+      await notifyAgencyOwner(b, 'Down payment receipt uploaded', `${user.full_name || user.email} uploaded a DP receipt for "${b.package_title}".`);
+      queryClient.invalidateQueries({ queryKey: ['my-bookings', user?.email] });
+    } catch (err) {
+      console.error('DP receipt upload failed:', err);
+      alert('Upload failed. Please try again.');
+    } finally {
+      setBusyBookingId(null);
+    }
+  };
+
+  const handleAvatarChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/') || file.size > 5 * 1024 * 1024) {
+      setSaveError('Choose an image up to 5MB.');
+      return;
+    }
+    setSaveError('');
+    setAvatarUploading(true);
+    try {
+      const url = await uploadFile(file, 'avatars');
+      setEditForm(p => ({ ...p, avatar_url: url }));
+    } catch (err) {
+      console.error('Avatar upload failed:', err);
+      setSaveError('Upload failed. Please try again.');
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
+
   const handleSaveProfile = async () => {
     setIsSaving(true);
-    await base44.auth.updateMe(editForm);
-    setIsSaving(false);
-    setEditOpen(false);
+    setSaveError('');
+    try {
+      // Only these four fields are ever sent (never role or email).
+      const { bio, location, full_name, avatar_url } = editForm;
+      await base44.auth.updateMe({ bio, location, full_name: full_name?.trim() || user?.full_name, avatar_url });
+      await checkUserAuth?.();
+      setEditOpen(false);
+    } catch (err) {
+      console.error('Save profile failed:', err);
+      setSaveError('Could not save. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const approvedAgency = myAgencies.find(a => a.status === 'approved');
@@ -175,9 +264,20 @@ export default function Profile() {
             <DialogContent>
               <DialogHeader><DialogTitle>Edit Profile</DialogTitle></DialogHeader>
               <div className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <label className="relative w-16 h-16 rounded-full overflow-hidden bg-primary/10 flex items-center justify-center cursor-pointer shrink-0">
+                    {editForm.avatar_url
+                      ? <img src={editForm.avatar_url} alt="" className="w-full h-full object-cover" />
+                      : <Camera className="w-6 h-6 text-primary" />}
+                    {avatarUploading && <span className="absolute inset-0 bg-background/70 flex items-center justify-center"><Loader2 className="w-5 h-5 animate-spin" /></span>}
+                    <input type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
+                  </label>
+                  <div className="flex-1"><Label>Display name</Label><Input value={editForm.full_name} onChange={e => setEditForm(p => ({ ...p, full_name: e.target.value }))} maxLength={60} /></div>
+                </div>
                 <div><Label>Bio</Label><Textarea value={editForm.bio} onChange={e => setEditForm(p => ({ ...p, bio: e.target.value }))} placeholder="Tell us about yourself..." className="mt-1" /></div>
                 <div><Label>Location</Label><Input value={editForm.location} onChange={e => setEditForm(p => ({ ...p, location: e.target.value }))} placeholder="e.g. Manila, Philippines" className="mt-1" /></div>
-                <Button className="w-full rounded-full" onClick={handleSaveProfile} disabled={isSaving}>
+                {saveError && <p className="text-xs text-destructive">{saveError}</p>}
+                <Button className="w-full rounded-full" onClick={handleSaveProfile} disabled={isSaving || avatarUploading}>
                   {isSaving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null} Save
                 </Button>
               </div>
@@ -257,8 +357,9 @@ export default function Profile() {
           navigate('/roadmap');
         }
       }}>
-        <TabsList className="w-full grid grid-cols-6 h-auto p-1">
+        <TabsList className="w-full grid grid-cols-7 h-auto p-1">
           <TabsTrigger value="posts" className="text-xs py-1.5">Posts</TabsTrigger>
+          <TabsTrigger value="saved" className="text-xs py-1.5">Saved</TabsTrigger>
           <TabsTrigger value="trips" className="text-xs py-1.5">Trips</TabsTrigger>
           <TabsTrigger value="bookings" className="text-xs py-1.5">Bookings</TabsTrigger>
           <TabsTrigger value="roadmap" className="text-xs py-1.5">
@@ -281,6 +382,14 @@ export default function Profile() {
         </TabsContent>
 
         {/* Trips */}
+        {/* Saved posts */}
+        <TabsContent value="saved" className="mt-3 space-y-3">
+          {savedPosts.length === 0 && <p className="text-center text-sm text-muted-foreground py-8">Nothing saved yet. Tap the ... on a post and choose Save post.</p>}
+          {savedPosts.map(post => (
+            <PostCard key={post.id} post={post} onComment={setCommentPost} />
+          ))}
+        </TabsContent>
+
         <TabsContent value="trips" className="mt-3 space-y-3">
           {myTrips.length === 0 && myMemberships.length === 0 && (
             <div className="text-center py-10">
@@ -369,7 +478,7 @@ export default function Profile() {
                 {b.travel_date && (
                   <span className="flex items-center gap-1"><CalendarDays className="w-3 h-3" />{b.travel_date}</span>
                 )}
-                {b.num_pax && (
+                {Number(b.num_pax) > 0 && (
                   <span className="flex items-center gap-1"><Users className="w-3 h-3" />{b.num_pax} pax</span>
                 )}
                 {b.payment_method && (
@@ -386,7 +495,7 @@ export default function Profile() {
                   )}
                 </div>
 
-                {b.downpayment_amount && (
+                {Number(b.downpayment_amount) > 0 && (
                   <div className="flex flex-wrap gap-x-3 text-xs">
                     <span className="text-green-700 flex items-center gap-1">
                       <Wallet className="w-3 h-3" />
@@ -400,6 +509,22 @@ export default function Profile() {
                   </div>
                 )}
               </div>
+
+              {b.status === 'pending' && b.use_downpayment && !b.dp_receipt_url && (
+                <label className="mt-2 flex items-center justify-center gap-1.5 text-xs font-medium rounded-full border border-dashed border-primary/50 text-primary py-2 cursor-pointer hover:bg-primary/5">
+                  {busyBookingId === b.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Receipt className="w-3 h-3" />}
+                  Upload down payment receipt
+                  <input type="file" accept="image/*" className="hidden" disabled={busyBookingId === b.id} onChange={(e) => handleUploadDpReceipt(b, e.target.files?.[0])} />
+                </label>
+              )}
+              {b.status === 'pending' && (
+                <Button size="sm" variant="outline" className="mt-2 w-full rounded-full h-8 text-xs text-destructive border-destructive/30 hover:bg-destructive/5" disabled={busyBookingId === b.id} onClick={() => handleCancelBooking(b)}>
+                  Cancel booking
+                </Button>
+              )}
+              {b.status === 'confirmed' && (
+                <p className="mt-2 text-[11px] text-muted-foreground">To cancel a confirmed booking, please message the agency.</p>
+              )}
 
               {/* DP receipt thumbnail */}
               {b.dp_receipt_url && (

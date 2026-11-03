@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { Button } from '@/components/ui/button';
 import { UserPlus, UserCheck } from 'lucide-react';
 import { unlockAchievement } from '@/lib/achievements';
+import { notifyUser } from '@/lib/notify';
 
 export default function FollowButton({ targetEmail, targetName }) {
   const { user } = useAuth();
@@ -23,6 +24,7 @@ export default function FollowButton({ targetEmail, targetName }) {
 
   const handleToggle = async () => {
     setLoading(true);
+    try {
     if (isFollowing) {
       await base44.entities.Follow.delete(followRecords[0].id);
     } else {
@@ -33,10 +35,23 @@ export default function FollowButton({ targetEmail, targetName }) {
         following_name: targetName,
       });
       unlockAchievement(user.email, user.full_name, 'follow_hiker');
+      notifyUser({
+        toEmail: targetEmail,
+        fromEmail: user.email,
+        title: 'New follower',
+        message: `${user.full_name || user.email} started following you.`,
+        type: 'system',
+        link: '/profile',
+        icon: '\uD83D\uDC4B',
+      });
     }
     qc.invalidateQueries({ queryKey: ['follow-check', user?.email, targetEmail] });
     qc.invalidateQueries({ queryKey: ['following', user?.email] });
-    setLoading(false);
+    } catch (err) {
+      console.error('Follow toggle failed:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

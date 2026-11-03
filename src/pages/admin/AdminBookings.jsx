@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
+import { commissionConfirmPatch } from '@/lib/commission';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
@@ -21,7 +22,7 @@ export default function AdminBookings() {
 
   const { data: bookings = [], isLoading } = useQuery({
     queryKey: ['admin-bookings'],
-    queryFn: () => base44.entities.Booking.list('-created_date'),
+    queryFn: () => base44.entities.Booking.list('-created_date', 1000),
   });
 
   // Instantly update a booking in local cache — no loading flicker
@@ -32,8 +33,15 @@ export default function AdminBookings() {
   };
 
   const handleStatusChange = async (id, status) => {
+    const previous = bookings.find(b => b.id === id)?.status;
     patchCache(id, { status });
-    await base44.entities.Booking.update(id, { status });
+    try {
+      await base44.entities.Booking.update(id, { status });
+    } catch (err) {
+      console.error('Status change failed:', err);
+      patchCache(id, { status: previous });
+      alert('Unable to update booking status: ' + (err?.message || 'unknown error'));
+    }
     queryClient.invalidateQueries({ queryKey: ['admin-bookings'] });
   };
 
@@ -46,11 +54,7 @@ export default function AdminBookings() {
   // ✅ Admin confirms GCash received — sets proper status
   const handleConfirmCommission = async (booking) => {
     setUpdatingId(booking.id);
-    const patch = {
-      status:                    'commission_confirmed',
-      commission_confirmed:      true,
-      commission_confirmed_date: new Date().toISOString(),
-    };
+    const patch = commissionConfirmPatch();
     patchCache(booking.id, patch); // instant UI update
     setReceiptDialog(false);
     try {

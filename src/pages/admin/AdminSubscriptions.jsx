@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Loader2, CheckCircle, XCircle, ExternalLink, AlertCircle } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { supabase } from '@/lib/supabase';
+import { todayStr, subscriptionEndDateFor } from '@/lib/plans';
 
 const statusColors = {
   pending: 'bg-yellow-100 text-yellow-700',
@@ -32,7 +33,7 @@ export default function AdminSubscriptions() {
 
   const { data: subs = [], isLoading } = useQuery({
     queryKey: ['admin-subs'],
-    queryFn: () => base44.entities.AgencySubscription.list('-created_date', 100),
+    queryFn: () => base44.entities.AgencySubscription.list('-created_date', 1000),
   });
 
   const updateSubscription = async (id, data) => {
@@ -76,7 +77,20 @@ export default function AdminSubscriptions() {
   const approve = async (sub) => {
     setActionError('');
     try {
-      await updateSubscription(sub.id, { status: 'verified' });
+      const patch = { status: 'verified' };
+      if (sub.plan !== 'free') {
+        // Paid plans are valid for 1 year. Early renewals extend from the current end date.
+        let others = [];
+        try {
+          const { data } = await supabase
+            .from('agency_subscriptions').select('*')
+            .eq('agency_id', sub.agency_id).eq('status', 'verified').neq('id', sub.id);
+          others = data || [];
+        } catch { /* fall back to today + 1 year */ }
+        patch.start_date = todayStr();
+        patch.end_date = subscriptionEndDateFor(others);
+      }
+      await updateSubscription(sub.id, patch);
       try {
         await updateAgency(sub.agency_id, {
           status: 'approved',

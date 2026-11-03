@@ -1,6 +1,10 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
+import { syncLikesCount } from '@/lib/postCounts';
+import { withConquered } from '@/lib/peaks';
+import ComparePeaksDialog from '@/components/profile/ComparePeaksDialog';
+import { notifyUser } from '@/lib/notify';
 import { useAuth } from '@/lib/AuthContext';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -14,15 +18,11 @@ import {
 import { calcLevel } from '@/lib/achievements';
 import { useUserAchievements, useUserGamification } from '@/lib/useGamification';
 import FollowButton from '@/components/social/FollowButton';
-import PostCard from '@/components/feed/PostCard';
-import { useState, useEffect, useMemo, Suspense, lazy } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import CommentsSheet from '@/components/feed/CommentsSheet';
 import { useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import React from 'react';
-
-// Lazy load heavy components
-const LazyMapComponent = lazy(() => Promise.resolve({ default: ConnectedTrailMap }));
 
 // ─── Leaflet ───────────────────────────────────────────────────────────────────
 import { MapContainer, TileLayer, Polyline, Marker, Popup, useMap } from 'react-leaflet';
@@ -514,7 +514,6 @@ function GalleryView({ posts, roadmaps }) {
 function ProfileRoadmapStats({ roadmaps }) {
   const stats = useMemo(() => {
     const allConquered = roadmaps.flatMap(r => r.conquered_mountains || []);
-    const allDests = roadmaps.flatMap(r => r.destinations || []);
     return {
       totalConquered: allConquered.length,
       maxElevation: Math.max(0, ...allConquered.map(m => m.elevation || 0)),
@@ -685,7 +684,6 @@ function PublicRoadmapCard({ rm }) {
 // ─── Roadmap Story Mode ────────────────────────────────────────────────────────
 function RoadmapStoryMode({ rm }) {
   const completedDests = rm.destinations?.filter(d => d.status === 'completed') || [];
-  const ongoingDest = rm.destinations?.find(d => d.status === 'ongoing');
   const nextDest = rm.destinations?.find(d => d.status !== 'completed');
   const totalConquered = rm.conquered_mountains?.length || 0;
 
@@ -765,7 +763,6 @@ function RoadmapStoryMode({ rm }) {
 // ─── Utility Functions ────────────────────────────────────────────────────────
 function getClimberIdentity(roadmaps) {
   const totalConquered = roadmaps.flatMap(r => r.conquered_mountains || []).length;
-  const completedRoadmaps = roadmaps.filter(r => r.status === 'completed').length;
   
   if (totalConquered === 0) return 'Aspiring Explorer';
   if (totalConquered < 5) return `Emerging Climber • ${totalConquered} peaks`;
@@ -797,7 +794,7 @@ function getFeaturedPhoto(posts) {
 }
 
 // ─── Action CTA Row ────────────────────────────────────────────────────────────
-function ActionCTARow({ isOwnProfile, onMessage, isMsgLoading, targetEmail }) {
+function ActionCTARow({ isOwnProfile, onMessage, isMsgLoading, targetEmail, onCompare }) {
   if (isOwnProfile) return null;
 
   return (
@@ -813,6 +810,7 @@ function ActionCTARow({ isOwnProfile, onMessage, isMsgLoading, targetEmail }) {
       <Button
         variant="outline"
         className="rounded-xl h-9 text-xs font-medium"
+        onClick={onCompare}
       >
         <Mountain className="w-3.5 h-3.5 mr-1" />
         Compare Peaks
@@ -831,6 +829,7 @@ export default function PublicProfile() {
   const [isMsgLoading, setIsMsgLoading] = useState(false);
   const [shareStatus, setShareStatus] = useState('');
   const [roadmapMode, setRoadmapMode] = useState('default'); // 'default' or 'story'
+  const [compareOpen, setCompareOpen] = useState(false);
 
   const handleMessage = async () => {
     if (!profile?.email) return;
@@ -873,14 +872,35 @@ export default function PublicProfile() {
   };
 
   const handleLikePost = async (post) => {
+    if (!currentUser?.id) return;
     try {
-      await supabase
-        .from('posts')
-        .update({ likes_count: (post.likes_count || 0) + 1 })
-        .eq('id', post.id);
-      queryClient.invalidateQueries(['public-posts', id]);
+      const { data: existing, error: readErr } = await supabase
+        .from('post_likes').select('id')
+        .eq('post_id', post.id).eq('user_id', currentUser.id).maybeSingle();
+      if (readErr) throw readErr;
+      let result;
+      if (existing) {
+        result = await supabase.from('post_likes').delete().eq('post_id', post.id).eq('user_id', currentUser.id);
+      } else {
+        result = await supabase.from('post_likes').insert({ post_id: post.id, user_id: currentUser.id });
+        if (result.error?.code === '23505') result = { error: null };
+        if (!result.error) {
+          notifyUser({
+            toEmail: profile?.email,
+            fromEmail: currentUser.email,
+            title: 'New like on your post',
+            message: `${currentUser.full_name || currentUser.email} liked your post.`,
+            type: 'comment',
+            link: '/',
+            icon: '\u2764\uFE0F',
+          });
+        }
+      }
+      if (result.error) throw result.error; // supabase-js returns errors instead of throwing them
+      await syncLikesCount(post.id);
+      queryClient.invalidateQueries({ queryKey: ['public-posts', id] });
     } catch (err) {
-      console.error('Like post failed', err);
+      console.error('Like failed:', err);
     }
   };
 
@@ -917,7 +937,7 @@ export default function PublicProfile() {
     queryKey: ['public-roadmaps', profile?.email],
     queryFn: async () => {
       const all = await base44.entities.Roadmap.filter({ user_email: profile.email });
-      return all.filter(r => r.is_public);
+      return all.filter(r => r.is_public).map(withConquered);
     },
     enabled: !!profile?.email,
   });
@@ -1099,7 +1119,9 @@ export default function PublicProfile() {
       </div>
 
       {/* ── Action CTAs ── */}
-      <ActionCTARow isOwnProfile={isOwnProfile} onMessage={handleMessage} isMsgLoading={isMsgLoading} targetEmail={profile.email} />
+      <ActionCTARow isOwnProfile={isOwnProfile} onMessage={handleMessage} isMsgLoading={isMsgLoading} targetEmail={profile.email}
+          onCompare={() => setCompareOpen(true)}
+        />
 
       {/* ── Featured Achievement Spotlight ── */}
       {featuredAchievement && (
@@ -1290,6 +1312,7 @@ export default function PublicProfile() {
         </TabsContent>
       </Tabs>
 
+      <ComparePeaksDialog open={compareOpen} onOpenChange={setCompareOpen} theirName={profile?.full_name} theirRoadmaps={roadmaps} myEmail={currentUser?.email} />
       <CommentsSheet post={commentPost} open={!!commentPost} onOpenChange={() => setCommentPost(null)} />
     </div>
   );

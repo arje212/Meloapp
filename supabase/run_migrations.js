@@ -1,8 +1,19 @@
 // Run Supabase SQL migrations against a Postgres connection string
 // Usage: set SUPABASE_DB_URL and run `node supabase/run_migrations.js`
-const fs = require('fs');
-const { Client } = require('pg');
-const path = require('path');
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+// `pg` is intentionally NOT a project dependency. Install it only where you run this script:
+//   npm install --no-save pg
+let Client;
+try {
+  ({ Client } = await import('pg'));
+} catch {
+  console.error('Missing dependency: run `npm install --no-save pg` first.');
+  process.exit(1);
+}
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 async function run() {
   const databaseUrl = process.env.SUPABASE_DB_URL;

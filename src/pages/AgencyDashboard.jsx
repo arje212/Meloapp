@@ -20,20 +20,23 @@ import {
   Image, Flag, Globe, Facebook, Instagram, Phone, MapPin, Sparkles,
   Wallet,
 } from 'lucide-react';
-import { Link, useNavigate as useNav } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { format, formatDistanceToNow } from 'date-fns';
 import FinancialSummary from '@/components/agency/FinancialSummary';
 import { uploadFile } from '@/lib/uploadFile';
+import { fetchMyChatRooms } from '@/lib/chatHelpers';
+import { ADMIN_GCASH_NUMBER, ADMIN_GCASH_NAME } from '@/lib/config';
+import { isCommissionConfirmed } from '@/lib/commission';
+import { PLAN_COMMISSION, pickActiveSubscription, isSubscriptionExpired, daysUntil, planRank } from '@/lib/plans';
+import AgencyAnalytics from '@/components/agencies/AgencyAnalytics';
 
-const ADMIN_GCASH_NUMBER = '09750944563';
-const ADMIN_GCASH_NAME   = 'Melotrip Admin';
 
 const PLAN_CONFIG = {
-  free:    { maxPackages: 3,        commission: 10, label: 'Free',    color: 'bg-gray-100 text-gray-700' },
-  starter: { maxPackages: 5,        commission: 7,  label: 'Starter', color: 'bg-blue-100 text-blue-700' },
-  weekly:  { maxPackages: 5,        commission: 7,  label: 'Starter', color: 'bg-blue-100 text-blue-700' },
-  pro:     { maxPackages: Infinity, commission: 5,  label: 'Pro',     color: 'bg-primary/10 text-primary' },
-  yearly:  { maxPackages: Infinity, commission: 3,  label: 'Yearly',  color: 'bg-purple-100 text-purple-700' },
+  free:    { maxPackages: 3,        commission: PLAN_COMMISSION.free, label: 'Free',    color: 'bg-gray-100 text-gray-700' },
+  starter: { maxPackages: 5,        commission: PLAN_COMMISSION.starter, label: 'Starter', color: 'bg-blue-100 text-blue-700' },
+  weekly:  { maxPackages: 5,        commission: PLAN_COMMISSION.weekly,  label: 'Starter', color: 'bg-blue-100 text-blue-700' },
+  pro:     { maxPackages: Infinity, commission: PLAN_COMMISSION.pro, label: 'Pro',     color: 'bg-primary/10 text-primary' },
+  yearly:  { maxPackages: Infinity, commission: PLAN_COMMISSION.yearly, label: 'Yearly',  color: 'bg-purple-100 text-purple-700' },
 };
 const getPlanConfig = (p) => PLAN_CONFIG[p] ?? PLAN_CONFIG[p?.toLowerCase()] ?? PLAN_CONFIG.free;
 const PAID_PLANS = new Set(['starter', 'weekly', 'pro', 'yearly']);
@@ -279,7 +282,7 @@ export default function AgencyDashboard() {
 
   const { data: bookings = [] } = useQuery({
     queryKey: ['agency-bookings', agency?.id],
-    queryFn:  () => base44.entities.Booking.filter({ agency_id: agency.id }, '-created_date', 100),
+    queryFn:  () => base44.entities.Booking.filter({ agency_id: agency.id }, '-created_date', 1000),
     enabled:  !!agency?.id,
   });
 
@@ -305,8 +308,7 @@ export default function AgencyDashboard() {
   const { data: chatRooms = [] } = useQuery({
     queryKey: ['agency-chats', user?.email],
     queryFn: async () => {
-      const all = await base44.entities.ChatRoom.list('-updated_date', 100);
-      return all.filter(r => r.participants?.includes(user.email));
+      return fetchMyChatRooms(user.email);
     },
     enabled: !!user?.email,
   });
@@ -322,19 +324,26 @@ export default function AgencyDashboard() {
   }, [agency?.id]);
 
   // Derived
-  const activeSub      = subs[0];
+  const activeSub      = pickActiveSubscription(subs);
   const currentPlan    = activeSub?.plan ?? 'free';
   const planConfig     = getPlanConfig(currentPlan);
   const maxPackages    = planConfig.maxPackages;
   const commissionRate = planConfig.commission;
+  const paidExpired    = subs.find(s => s.status === 'verified' && s.plan !== 'free' && isSubscriptionExpired(s));
+  const daysToEnd      = activeSub && activeSub.plan !== 'free' && activeSub.end_date ? daysUntil(activeSub.end_date) : null;
+  const expiryNotice   = (paidExpired && (!activeSub || activeSub.plan === 'free'))
+    ? `Your ${paidExpired.plan} plan expired on ${paidExpired.end_date}. You are on the Free plan (${PLAN_CONFIG.free.commission}% commission, max ${PLAN_CONFIG.free.maxPackages} packages).`
+    : (daysToEnd != null && daysToEnd <= 30 ? `Your ${activeSub.plan} plan ends on ${activeSub.end_date} (${Math.max(0, daysToEnd)} day(s) left).` : '');
   const atPackageLimit = packages.length >= maxPackages;
   const isPaidPlan     = PAID_PLANS.has(currentPlan?.toLowerCase());
 
   const completedBookings     = bookings.filter(b => ['completed','commission_sent','commission_confirmed'].includes(b.status));
-  const totalRevenue          = completedBookings.reduce((s, b) => s + (b.total_price || 0), 0);
-  const totalCommission       = Math.round(totalRevenue * commissionRate / 100);
+  const bookingTotal          = (b) => Number(b.actual_total_price ?? b.total_price) || 0;
+  const totalRevenue          = completedBookings.reduce((s, b) => s + bookingTotal(b), 0);
+  // Use each booking's STORED fee/rate; the old code re-applied today's plan rate to all history.
+  const totalCommission       = completedBookings.reduce((s, b) => s + (b.platform_fee ?? Math.round(bookingTotal(b) * (b.commission_rate ?? commissionRate) / 100)), 0);
   const netRevenue            = totalRevenue - totalCommission;
-  const pendingReceiptCount   = bookings.filter(b => b.status === 'completed').length;
+  const pendingReceiptCount   = bookings.filter(b => b.status === 'completed' && !isCommissionConfirmed(b)).length;
   const pendingDpReceiptCount = bookings.filter(b => b.status === 'pending' && b.dp_receipt_url).length;
 
   // ── All upload calls now use shared uploadFile from @/lib/uploadFile ──
@@ -434,9 +443,11 @@ export default function AgencyDashboard() {
       const actualPax = Number(completionForm.actual_pax);
       const pricePerPax = completionBooking.total_price / (completionBooking.num_pax || 1);
       const actualTotal = pricePerPax * actualPax;
-      const platformFee = Math.round(actualTotal * commissionRate / 100);
+      // use the rate STORED on the booking (what the guest was quoted); the database enforces this too
+      const bookingRate = completionBooking.commission_rate ?? commissionRate;
+      const platformFee = Math.round(actualTotal * bookingRate / 100);
       const agencyEarnings = actualTotal - platformFee;
-      await base44.entities.Booking.update(completionBooking.id, { status: 'completed', completion_proof_url: completionForm.proof_url, actual_pax: actualPax, completed_at: new Date().toISOString(), completion_notes: completionForm.notes.trim() || undefined, actual_total_price: actualTotal, platform_fee: platformFee, agency_earnings: agencyEarnings, commission_rate: commissionRate });
+      await base44.entities.Booking.update(completionBooking.id, { status: 'completed', completion_proof_url: completionForm.proof_url, actual_pax: actualPax, completed_at: new Date().toISOString(), completion_notes: completionForm.notes.trim() || undefined, actual_total_price: actualTotal, platform_fee: platformFee, agency_earnings: agencyEarnings });
       qc.invalidateQueries({ queryKey: ['agency-bookings'] });
       setCompletionDialog(false); setCompletionBooking(null);
     } catch (err) { setSaveError(err.message || 'Unable to complete booking.'); }
@@ -628,6 +639,12 @@ export default function AgencyDashboard() {
             {agency.is_verified && <Badge className="bg-green-100 text-green-700 border-0 text-xs">✓ Verified</Badge>}
             <Badge className={`border-0 text-xs ${planConfig.color}`}>{planConfig.label} Plan</Badge>
           </div>
+          {expiryNotice && (
+            <div className="mt-2 flex items-center justify-between gap-2 rounded-lg border border-yellow-300 bg-yellow-50 px-3 py-2 text-xs text-yellow-800">
+              <span>{expiryNotice}</span>
+              <button type="button" className="shrink-0 font-semibold underline" onClick={() => navigate('/agency-subscribe')}>Renew</button>
+            </div>
+          )}
           <p className="text-xs text-muted-foreground mt-0.5">{agency.location}{agency.contact_phone && ` · ${agency.contact_phone}`}</p>
           <div className="grid grid-cols-4 gap-2 mt-3">
             {[{ label: 'Packages', value: packages.length, icon: Package }, { label: 'Trips', value: trips.length, icon: Mountain }, { label: 'Bookings', value: bookings.length, icon: BookOpen }, { label: 'Messages', value: chatRooms.length, icon: MessageCircle }].map(({ label, value, icon: Icon }) => (
@@ -756,6 +773,12 @@ export default function AgencyDashboard() {
             {!isPaidPlan && <div className="mt-3 flex items-center justify-between bg-yellow-50 border border-yellow-200 rounded-xl p-3"><p className="text-xs text-yellow-800">Upgrade to cut your commission rate</p><Button size="sm" className="rounded-full h-7 text-xs" onClick={() => navigate('/agency-subscribe')}>Upgrade</Button></div>}
           </div>
 
+          <AgencyAnalytics
+            bookings={bookings}
+            locked={planRank(activeSub?.plan) < 2}
+            onUpgrade={() => navigate('/agency-subscribe')}
+          />
+
           {/* GCash Account Setup */}
           <div className={`rounded-2xl p-4 border ${agency?.gcash_number ? 'bg-blue-50 border-blue-200' : 'bg-amber-50 border-amber-200'}`}>
             <div className="flex items-center justify-between mb-3">
@@ -807,7 +830,7 @@ export default function AgencyDashboard() {
                 <span className="flex items-center gap-1"><Users className="w-3 h-3" />{b.num_pax} pax</span>
                 <span className="flex items-center gap-1"><CreditCard className="w-3 h-3" />{b.payment_method?.replace('_', ' ')}</span>
                 <span className="font-bold text-primary">P{b.total_price?.toLocaleString()}</span>
-                {b.downpayment_amount && <span className="text-green-700 font-medium flex items-center gap-1"><Wallet className="w-3 h-3" />DP: P{b.downpayment_amount?.toLocaleString()}</span>}
+                {Number(b.downpayment_amount) > 0 && <span className="text-green-700 font-medium flex items-center gap-1"><Wallet className="w-3 h-3" />DP: P{b.downpayment_amount?.toLocaleString()}</span>}
                 {b.balance_amount > 0 && <span className="text-amber-700 flex items-center gap-1">Balance: P{b.balance_amount?.toLocaleString()}</span>}
               </div>
 
@@ -858,13 +881,18 @@ export default function AgencyDashboard() {
 
               {b.status === 'pending' && (
                 <div className="space-y-2">
+                  {b.use_downpayment && !b.dp_receipt_url && (
+                    <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 text-xs text-amber-800">
+                      <Clock className="w-3 h-3 shrink-0" /> Hinihintay pa ang DP receipt ng user bago ma-confirm ang booking.
+                    </div>
+                  )}
                   {b.dp_receipt_url && (
                     <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-1.5 text-xs text-emerald-800">
                       <CheckCircle className="w-3 h-3 shrink-0" /> May DP receipt na ang user — pwede na i-confirm ang booking.
                     </div>
                   )}
                   <div className="flex gap-2">
-                    <Button size="sm" className="rounded-full h-7 text-xs flex-1" onClick={() => handleUpdateBooking(b.id, 'confirmed')}><CheckCircle className="w-3 h-3 mr-1" /> Confirm</Button>
+                    <Button size="sm" className="rounded-full h-7 text-xs flex-1" disabled={!!b.use_downpayment && !b.dp_receipt_url} onClick={() => handleUpdateBooking(b.id, 'confirmed')}><CheckCircle className="w-3 h-3 mr-1" /> Confirm</Button>
                     <Button size="sm" variant="outline" className="rounded-full h-7 text-xs flex-1" onClick={() => handleUpdateBooking(b.id, 'cancelled')}><XCircle className="w-3 h-3 mr-1" /> Decline</Button>
                   </div>
                 </div>
@@ -877,7 +905,7 @@ export default function AgencyDashboard() {
                 </div>
               )}
 
-              {b.status === 'completed' && (
+              {b.status === 'completed' && !isCommissionConfirmed(b) && (
                 <div className="space-y-2">
                   <Button size="sm" variant="outline" className="rounded-full h-7 text-xs w-full border-primary/30 text-primary hover:bg-primary/5" onClick={() => { setGroupChatBooking(b); setGroupChatDialog(true); }}><UsersRound className="w-3 h-3 mr-1" /> Create Group Chat</Button>
                   <Button size="sm" className="rounded-full h-7 text-xs w-full bg-blue-600 hover:bg-blue-700" onClick={() => openReceiptDialog(b)}><Upload className="w-3 h-3 mr-1" /> Send GCash Commission Receipt</Button>

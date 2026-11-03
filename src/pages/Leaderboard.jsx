@@ -13,45 +13,66 @@ const medals    = ['🥇', '🥈', '🥉'];
 export default function Leaderboard() {
   const { user } = useAuth();
 
-  // ── Fetch all achievements + join profiles for avatar/name ─────────────────
-  const { data: leaderboard = [], isLoading } = useQuery({
+  // Aggregate XP per hiker.
+  // Fixes: (1) Supabase returns max 1000 rows per request, so the old single query silently dropped
+  // data as the community grew - now paged; (2) rows are grouped by email OR user_id (achievements
+  // are written with user_email; grouping only by user_id could skip them); (3) your rank is shown
+  // even when you are outside the top 50.
+  const { data: board = { list: [], all: [] }, isLoading } = useQuery({
     queryKey: ['leaderboard'],
     queryFn: async () => {
-      const { data: achvs, error } = await supabase
-        .from('achievements')
-        .select('user_id, xp_earned, profiles(id, full_name, email, avatar_url)')
-        .order('xp_earned', { ascending: false });
+      const PAGE = 1000;
+      let rows = [];
+      for (let from = 0; from < 10 * PAGE; from += PAGE) {
+        const { data, error } = await supabase
+          .from('achievements')
+          .select('user_id, user_email, user_name, xp_earned')
+          .order('id')
+          .range(from, from + PAGE - 1);
+        if (error) throw error;
+        rows = rows.concat(data || []);
+        if (!data || data.length < PAGE) break;
+      }
 
-      if (error) throw error;
+      const chunk = (arr, n = 150) => Array.from({ length: Math.ceil(arr.length / n) }, (_, i) => arr.slice(i * n, i * n + n));
+      const ids    = [...new Set(rows.map(r => r.user_id).filter(Boolean))];
+      const emails = [...new Set(rows.map(r => r.user_email).filter(Boolean))];
+      const profiles = [];
+      for (const part of chunk(ids))    { const { data } = await supabase.from('profiles').select('id, full_name, email, avatar_url').in('id', part);    profiles.push(...(data || [])); }
+      for (const part of chunk(emails)) { const { data } = await supabase.from('profiles').select('id, full_name, email, avatar_url').in('email', part); profiles.push(...(data || [])); }
+      const byId = {}; const byEmail = {};
+      profiles.forEach(p => { byId[p.id] = p; if (p.email) byEmail[p.email.toLowerCase()] = p; });
 
-      // Aggregate XP by user_id
       const userMap = {};
-      achvs?.forEach(a => {
-        const uid = a.user_id;
-        if (!uid) return;
-        if (!userMap[uid]) {
-          userMap[uid] = {
-            id:       uid,
-            name:     a.profiles?.full_name || 'Unknown Hiker',
-            email:    a.profiles?.email || '',
-            avatar:   a.profiles?.avatar_url || null,
-            totalXp:  0,
-            count:    0,
+      rows.forEach(a => {
+        const email = (a.user_email || byId[a.user_id]?.email || '').toLowerCase();
+        const key   = email || a.user_id;
+        if (!key) return;
+        const prof  = byEmail[email] || byId[a.user_id] || null;
+        if (!userMap[key]) {
+          userMap[key] = {
+            id:      prof?.id || a.user_id || key,
+            name:    prof?.full_name || a.user_name || 'Unknown Hiker',
+            email,
+            avatar:  prof?.avatar_url || null,
+            totalXp: 0,
+            count:   0,
           };
         }
-        userMap[uid].totalXp += a.xp_earned || 0;
-        userMap[uid].count   += 1;
+        userMap[key].totalXp += a.xp_earned || 0;
+        userMap[key].count   += 1;
       });
 
-      return Object.values(userMap)
-        .sort((a, b) => b.totalXp - a.totalXp)
-        .slice(0, 50);
+      const sorted = Object.values(userMap).sort((a, b) => b.totalXp - a.totalXp);
+      return { list: sorted.slice(0, 50), all: sorted };
     },
     staleTime: 2 * 60 * 1000,
   });
 
-  const myRank  = leaderboard.findIndex(u => u.id === user?.id) + 1;
-  const myEntry = leaderboard.find(u => u.id === user?.id);
+  const leaderboard = board.list;
+  const meIdx   = (board.all || []).findIndex(u => u.id === user?.id || (user?.email && u.email === user.email.toLowerCase()));
+  const myRank  = meIdx + 1;
+  const myEntry = meIdx >= 0 ? board.all[meIdx] : null;
 
   return (
     <div className="max-w-2xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
@@ -129,7 +150,7 @@ export default function Leaderboard() {
         <div className="space-y-2">
           {leaderboard.map((entry, idx) => {
             const { level } = calcLevel(entry.totalXp);
-            const isMe = entry.id === user?.id;
+            const isMe = entry.id === user?.id || (!!user?.email && entry.email === user.email.toLowerCase());
             return (
               <div
                 key={entry.id}

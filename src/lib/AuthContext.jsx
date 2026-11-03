@@ -8,6 +8,7 @@ export const AuthProvider = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [onlineUsers, setOnlineUsers] = useState([]);
+  const [authError, setAuthError] = useState(null);
 
   // Declared first so the useEffects below can reference it
   const loadProfile = async (authUser) => {
@@ -18,8 +19,40 @@ export const AuthProvider = ({ children }) => {
         .eq('id', authUser.id)
         .single();
 
-      const merged = profile
-        ? { ...authUser, ...profile }
+      let finalProfile = profile;
+      if (!finalProfile) {
+        // First sign-in after email confirmation: signup could not create the row (no session yet).
+        // Always created as a normal 'user' - never elevated here.
+        try {
+          const { data: created } = await supabase
+            .from('profiles')
+            .upsert({
+              id: authUser.id,
+              email: authUser.email,
+              full_name: authUser.user_metadata?.full_name || authUser.email,
+              role: 'user',
+            })
+            .select()
+            .maybeSingle();
+          finalProfile = created || null;
+        } catch (e) {
+          console.warn('Profile bootstrap failed:', e);
+        }
+      }
+
+      // Enforce the admin "Block" action (previously is_blocked was written but never checked).
+      // NOTE: this is a client-side check; real enforcement still needs RLS / an auth hook.
+      if (finalProfile?.is_blocked) {
+        setAuthError({ type: 'user_blocked', message: 'Your account has been blocked. Please contact support.' });
+        await supabase.auth.signOut();
+        setUser(null);
+        setIsAuthenticated(false);
+        return;
+      }
+      setAuthError(null);
+
+      const merged = finalProfile
+        ? { ...authUser, ...finalProfile }
         : { ...authUser, role: 'user', full_name: authUser.user_metadata?.full_name };
 
       setUser(merged);
@@ -44,7 +77,6 @@ export const AuthProvider = ({ children }) => {
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log('Auth event:', event, session?.user?.email);
       if (event === 'SIGNED_IN' && session?.user) {
         loadProfile(session.user);
       } else if (event === 'SIGNED_OUT') {
@@ -112,13 +144,16 @@ export const AuthProvider = ({ children }) => {
       isAuthenticated,
       isLoadingAuth,
       isLoadingPublicSettings: false,
-      authError: null,
+      authError,
       appPublicSettings: null,
       authChecked: !isLoadingAuth,
       onlineUsers,
       logout,
       navigateToLogin: () => {},
-      checkUserAuth: () => {},
+      checkUserAuth: async () => {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) await loadProfile(session.user);
+      },
       checkAppState: () => {},
     }}>
       {children}

@@ -1,4 +1,10 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, lazy, Suspense } from 'react';
+import RoadmapHeader from '@/components/roadmap/RoadmapHeader';
+import SummitProofDialog from '@/components/roadmap/SummitProofDialog';
+import { resolveCoords, PROOF_MATCH_KM } from '@/lib/peaks';
+import { todayStr } from '@/lib/plans';
+
+const RoadmapMap = lazy(() => import('@/components/roadmap/RoadmapMap'));
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { useAuth } from '@/lib/AuthContext';
@@ -9,8 +15,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import {
-  Plus, Mountain, Trophy, Flame, TrendingUp, Target,
-  Trash2, Loader2, Award, CheckCircle2, Circle, Sparkles
+  Plus, Mountain, Trophy, Target,
+  Trash2, Loader2, Award, CheckCircle2, Circle, BadgeCheck, Camera
 } from 'lucide-react';
 import { unlockAchievement } from '@/lib/achievements';
 import { useUserGamification, useAddXP, useCheckIn, useCheckInStreak } from '@/lib/useGamification';
@@ -350,12 +356,27 @@ function MountainModal({ node, open, onClose, onMarkConquered, onRemove, isOwner
             ))}
           </div>
 
+          {isConquered && (node.proof_url ? (
+            <div className="rounded-xl overflow-hidden border">
+              <img src={node.proof_url} alt={`Summit photo at ${node.name}`} className="w-full max-h-56 object-cover" />
+              <div className="flex items-center gap-1.5 px-3 py-2 text-xs bg-emerald-50 text-emerald-800">
+                <BadgeCheck className="w-3.5 h-3.5 shrink-0" />
+                <span>Verified with summit photo{node.proof_gps ? (node.proof_distance_km <= PROOF_MATCH_KM ? `, location matched (${node.proof_distance_km} km from the peak)` : `, ${node.proof_distance_km} km from the peak`) : ''}</span>
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+              No summit photo yet.
+              {isOwner && <button type="button" className="underline font-semibold ml-1" onClick={() => { onMarkConquered(node); onClose(); }}>Add photo</button>}
+            </div>
+          ))}
+
           {isOwner && (
             <div className="flex gap-2 pt-1">
               {!isConquered && (
                 <Button size="sm" className="flex-1 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white"
                   onClick={() => { onMarkConquered(node); onClose(); }}>
-                  <Trophy className="w-3.5 h-3.5 mr-1" /> Mark as Conquered
+                  <Camera className="w-3.5 h-3.5 mr-1" /> Conquer with summit photo
                 </Button>
               )}
               <Button size="sm" variant="outline" className="rounded-full text-destructive border-destructive/30 hover:bg-destructive/10"
@@ -509,6 +530,7 @@ export default function Roadmap() {
   const [addOpen,      setAddOpen]      = useState(false);
   const [selectedNode, setSelectedNode] = useState(null);
   const [modalOpen,    setModalOpen]    = useState(false);
+  const [proofNode,    setProofNode]    = useState(null);   // peak waiting for its summit photo
   const [newAch,       setNewAch]       = useState(null);
   const [achQueue,     setAchQueue]     = useState([]);
   const checkedOnce = useRef(false);
@@ -529,6 +551,17 @@ export default function Roadmap() {
   const { data: gam }    = useUserGamification(user?.id);
   const { data: streak } = useCheckInStreak(user?.id);
   const checkIn          = useCheckIn();
+
+  // Coordinates from the mountains table (fallback table lives in lib/peaks.js)
+  const mountainCoords = useMemo(() => {
+    const map = {};
+    allMountains.forEach(m => {
+      const lat = Number(m.latitude ?? m.lat), lng = Number(m.longitude ?? m.lng);
+      if (Number.isFinite(lat) && Number.isFinite(lng) && (lat || lng)) map[m.name?.toLowerCase()] = [lat, lng];
+    });
+    return map;
+  }, [allMountains]);
+  const coordsFor = useMemo(() => (d) => resolveCoords(d, mountainCoords), [mountainCoords]);
 
   const mountainImgMap = useMemo(() => {
     const map = {};
@@ -600,37 +633,45 @@ export default function Roadmap() {
   }
 
   function handleAdd(dest) {
-    const updated = [...(roadmap?.destinations || []), dest];
-    saveDestinations(updated);
-    if (dest.status === 'conquered') triggerSummitEffect();
+    // "Already climbed" peaks are saved as planned and immediately ask for the summit photo.
+    const needsProof = dest.status === 'conquered';
+    const stored = needsProof ? { ...dest, status: 'planned' } : dest;
+    saveDestinations([...(roadmap?.destinations || []), stored]);
+    if (needsProof) setProofNode(stored);
   }
 
-  function handleMarkConquered(node) {
-    const updated = (roadmap?.destinations || []).map(d =>
-      d.name === node.name
-        ? { ...d, status: 'conquered', date_conquered: d.date_conquered || new Date().toISOString().slice(0, 10) }
-        : d
-    );
-    saveDestinations(updated);
-    triggerSummitEffect();
+  // A peak is conquered only together with a summit photo (see SummitProofDialog).
+  function handleMarkConquered(node) { setProofNode(node); }
+
+  function handleConfirmProof(proof) {
+    const node = proofNode;
+    if (!node) return;
+    const wasConquered = node.status === 'conquered' || node._status === 'conquered';
+    const base   = roadmap?.destinations || [];
+    const patch  = {
+      status: 'conquered',
+      date_conquered: proof.date_conquered || todayStr(),
+      proof_url: proof.proof_url,
+      proof_distance_km: proof.proof_distance_km,
+      proof_gps: proof.proof_gps,
+      proof_at: new Date().toISOString(),
+    };
+    const raw = Object.fromEntries(Object.entries(node).filter(([k]) => !k.startsWith('_') && k !== 'image_url')); // strip derived fields
+    const exists  = base.some(d => d.name === node.name);
+    saveDestinations(exists ? base.map(d => (d.name === node.name ? { ...d, ...patch } : d)) : [...base, { ...raw, ...patch }]);
+    if (!wasConquered) triggerSummitEffect();
+    setProofNode(null);
   }
 
   function handleToggleConquer(node) {
-    let becomingConquered = false;
-    const updated = (roadmap?.destinations || []).map(d => {
-      if (d.name === node.name) {
-        const nextStatus = d.status === 'conquered' ? 'planned' : 'conquered';
-        if (nextStatus === 'conquered') becomingConquered = true;
-        return {
-          ...d,
-          status: nextStatus,
-          date_conquered: nextStatus === 'conquered' ? new Date().toISOString().slice(0, 10) : ''
-        };
-      }
-      return d;
-    });
+    if (node.status !== 'conquered') { setProofNode(node); return; }       // conquering needs a photo
+    if (!window.confirm(`Remove "${node.name}" from your conquered peaks? Its summit photo will be removed too.`)) return;
+    const updated = (roadmap?.destinations || []).map(d =>
+      d.name === node.name
+        ? { ...d, status: 'planned', date_conquered: '', proof_url: '', proof_distance_km: null, proof_gps: false, proof_at: '' }
+        : d
+    );
     saveDestinations(updated);
-    if (becomingConquered) triggerSummitEffect();
   }
 
   function handleRemove(node) {
@@ -656,6 +697,7 @@ export default function Roadmap() {
   }
 
   // Achievement checker (Fixed infinite loop dependency)
+  const conqueredCount = (roadmap?.destinations || []).filter(d => d.status === 'conquered').length;
   useEffect(() => {
     if (!user?.email || !roadmap) return;
     if (!checkedOnce.current) { checkedOnce.current = true; return; }
@@ -674,7 +716,9 @@ export default function Roadmap() {
       if (!cancelled && unlocked.length) setAchQueue(q => [...q, ...unlocked]);
     })();
     return () => { cancelled = true; };
-  }, [roadmap?.destinations?.length, user?.email]);
+  // BUG FIX: previously keyed only on destinations.length, so marking an EXISTING planned mountain as
+  // conquered (length unchanged) never re-ran the checker and achievements never unlocked.
+  }, [roadmap?.destinations?.length, conqueredCount, user?.email]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!newAch && achQueue.length > 0) { setNewAch(achQueue[0]); setAchQueue(q => q.slice(1)); }
@@ -699,87 +743,46 @@ export default function Roadmap() {
 
   return (
     <div className="max-w-lg mx-auto px-4 py-6">
-      <AchievementPopup achievement={newAch} onClose={() => setNewAch(null)} />
+      <AchievementPopup achievement={newAch} onDismiss={() => setNewAch(null)} />
 
-      {/* ── Cinematic Header ── */}
-      <div className="rounded-2xl overflow-hidden mb-5 shadow-xl"
-        style={{ background: 'linear-gradient(155deg,rgba(10,25,41,0.96),rgba(4,28,18,0.88))' }}>
-        <div className="p-5 text-white">
-          <div className="flex items-start justify-between mb-3">
-            <div className="flex-1 min-w-0 pr-3">
-              <p className="text-[10px] text-white/50 uppercase tracking-widest mb-0.5">Your Journey</p>
-              <h1 className="text-xl font-bold leading-tight truncate">
-                {roadmap?.title || `${user?.full_name || 'Explorer'}'s Journey`}
-              </h1>
-              {nextDest && (
-                <p className="text-xs text-white/60 mt-0.5">
-                  Next: <span className="text-white font-medium">{nextDest.name}</span>
-                </p>
-              )}
-            </div>
-            <button 
-              disabled={isCheckingIn}
-              onClick={handleCheckIn}
-              className="shrink-0 text-xs px-3 py-1.5 bg-amber-400 text-black font-semibold rounded-full hover:bg-amber-300 disabled:opacity-50 flex items-center gap-1 active:scale-95 transition-transform">
-              {isCheckingIn ? <Loader2 className="w-3 h-3 animate-spin" /> : '🔥 Check-in'}
-            </button>
-          </div>
-
-          {/* XP & Level Section */}
-          <div className="bg-white/5 border border-white/10 rounded-xl p-2.5 mb-4">
-            <div className="flex justify-between items-center text-xs mb-1">
-              <span className="font-semibold flex items-center gap-1 text-amber-300">
-                <Sparkles className="w-3.5 h-3.5" /> Level {gam?.level || 1}
-              </span>
-              <span className="text-white/60 text-[11px]">{currentLevelXp}/{XP_PER_LEVEL} XP</span>
-            </div>
-            <div className="w-full bg-white/10 rounded-full h-1.5">
-              <div className="h-1.5 rounded-full bg-amber-400 transition-all duration-500" style={{ width: `${xpPercentage}%` }} />
-            </div>
-          </div>
-
-          <div className="flex gap-3 text-xs text-white/60 mb-3 flex-wrap">
-            <span>🔥 {streak?.streak_count || 0}d streak</span>
-            <span>⚡ {gam?.total_xp || 0} Total XP</span>
-            <span>⛰️ {nodes.filter(n => n._status === 'conquered').length} / {nodes.length} peaks</span>
-          </div>
-
-          <div>
-            <div className="flex justify-between text-xs text-white/50 mb-1">
-              <span>Trail Progress</span>
-              <span className="text-white font-medium">{progress}%</span>
-            </div>
-            <div className="w-full bg-white/10 rounded-full h-2">
-              <div className="h-2 rounded-full transition-all duration-700"
-                style={{ width: `${progress}%`, background: 'linear-gradient(90deg,#34d399,#f59e0b)' }} />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Stats ── */}
-      <div className="grid grid-cols-4 gap-2 mb-4">
-        {[
-          { v: nodes.filter(n => n._status === 'conquered').length, l: 'Peaks',    Icon: Mountain,   c: 'text-emerald-600' },
-          { v: Math.max(0, ...nodes.filter(n => n._status === 'conquered').map(n => Number(n.elevation) || 0)) ? `${Math.max(0, ...nodes.filter(n => n._status === 'conquered').map(n => Number(n.elevation) || 0))}m` : '—',  l: 'Highest',  Icon: TrendingUp, c: 'text-amber-600'   },
-          { v: `${computePoints(roadmap?.destinations || [])}`, l: 'Points',   Icon: Flame,      c: 'text-orange-500'  },
-          { v: `${progress}%`, l: 'Progress', Icon: Target,     c: 'text-primary'     },
-        ].map(({ v, l, Icon, c }) => (
-          <div key={l} className="bg-muted/50 rounded-xl p-2 text-center">
-            <Icon className={`w-3.5 h-3.5 mx-auto mb-0.5 ${c}`} />
-            <p className="text-sm font-semibold">{v}</p>
-            <p className="text-[10px] text-muted-foreground">{l}</p>
-          </div>
-        ))}
-      </div>
+      <RoadmapHeader
+        title={roadmap?.title || `${user?.full_name || 'Explorer'}'s Journey`}
+        nextDest={nextDest}
+        level={gam?.level || 1}
+        xpInLevel={currentLevelXp}
+        xpPerLevel={XP_PER_LEVEL}
+        xpPercent={xpPercentage}
+        streak={streak?.streak_count || 0}
+        totalXp={gam?.total_xp || 0}
+        conquered={nodes.filter(n => n._status === 'conquered').length}
+        total={nodes.length}
+        maxElev={Math.max(0, ...nodes.filter(n => n._status === 'conquered').map(n => Number(n.elevation) || 0))}
+        points={computePoints(roadmap?.destinations || [])}
+        progress={progress}
+        onCheckIn={handleCheckIn}
+        isCheckingIn={isCheckingIn}
+      />
 
       {/* ── Achievements ── */}
       <AchievementsStrip destinations={roadmap?.destinations || []} />
 
+      {/* Real map of your peaks */}
+      {nodes.length > 0 && (
+        <div className="bg-card border rounded-2xl overflow-hidden mb-3 shadow-sm">
+          <div className="px-4 pt-4 pb-2">
+            <p className="font-display font-semibold text-base">Peak map</p>
+            <p className="text-xs text-muted-foreground">Pins with a white ring have a summit photo. Tap a pin to see it.</p>
+          </div>
+          <Suspense fallback={<div className="h-72 flex items-center justify-center"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>}>
+            <RoadmapMap nodes={nodes} coordsFor={coordsFor} onSelect={nd => { setSelectedNode(nd); setModalOpen(true); }} />
+          </Suspense>
+        </div>
+      )}
+
       {/* ── Snake Trail Card ── */}
       <div className="bg-card border rounded-2xl p-4 mb-3 shadow-sm">
         <div className="flex items-center justify-between mb-2">
-          <p className="font-medium text-sm">Adventure Trail</p>
+          <div><p className="font-display font-semibold text-base">Trail map</p><p className="text-xs text-muted-foreground">Tap a peak to see details</p></div>
           <button onClick={() => setAddOpen(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-primary mercantile text-primary-foreground text-xs font-semibold rounded-full hover:bg-primary/90 transition-colors">
             <Plus className="w-3.5 h-3.5" /> Add Peak
@@ -817,7 +820,7 @@ export default function Roadmap() {
       {nodes.length > 0 && (
         <div className="bg-card border rounded-2xl overflow-hidden mb-4 shadow-sm">
           <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-            <p className="font-medium text-sm">All Peaks ({nodes.length})</p>
+            <p className="font-display font-semibold text-base">All peaks <span className="text-muted-foreground font-normal text-sm">({nodes.length})</span></p>
             <span className="text-xs text-muted-foreground">{nodes.filter(n => n._status === 'conquered').length} conquered</span>
           </div>
           <div className="divide-y divide-border">
@@ -836,6 +839,7 @@ export default function Roadmap() {
       )}
 
       {/* Modals */}
+      <SummitProofDialog node={proofNode} open={!!proofNode} onClose={() => setProofNode(null)} onConfirm={handleConfirmProof} coords={proofNode ? coordsFor(proofNode) : null} />
       <AddMountainModal open={addOpen} onClose={() => setAddOpen(false)} onAdd={handleAdd} />
       <MountainModal node={selectedNode} open={modalOpen} onClose={() => setModalOpen(false)} onMarkConquered={handleMarkConquered} onRemove={handleRemove} isOwner={isOwner} />
     </div>
@@ -871,11 +875,15 @@ function PeakListItem({ node, onClick, onToggleConquer, onRemove, isOwner }) {
   return (
     <div className="flex items-center gap-3 px-4 py-3 hover:bg-muted/40 transition-colors">
       <button onClick={onClick} className="w-11 h-11 rounded-full overflow-hidden shrink-0 border-2 flex items-center justify-center" style={{ borderColor: col.line, background: col.bg }}>
-        {node.image_url ? <img src={node.image_url} alt={node.name} className="w-full h-full object-cover" /> : <span className="text-xl">⛰️</span>}
+        {(node.proof_url || node.image_url) ? <img src={node.proof_url || node.image_url} alt={node.name} className="w-full h-full object-cover" /> : <span className="text-xl">⛰️</span>}
       </button>
       <button onClick={onClick} className="flex-1 min-w-0 text-left">
         <p className="text-sm font-medium truncate">{node.name}</p>
         <p className="text-xs text-muted-foreground truncate">{[node._province, node._elev].filter(Boolean).join(' · ')}</p>
+      
+        {node._status === 'conquered' && (node.proof_url
+          ? <span className="inline-flex items-center gap-1 text-[11px] text-emerald-700"><BadgeCheck className="w-3 h-3" />Photo verified</span>
+          : <span className="text-[11px] text-amber-700">No summit photo yet</span>)}
       </button>
       {isOwner && (
         <div className="flex items-center gap-1 shrink-0">

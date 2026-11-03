@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import FeaturedAgencies from '@/components/agencies/FeaturedAgencies';
 import { useQuery, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
@@ -407,6 +408,7 @@ export default function Feed() {
     queryFn: ({ pageParam = 0 }) => fetchPostsPage({ pageParam, tab: activeTab }),
     getNextPageParam: (lastPage) => lastPage.nextPage,
     staleTime: 2 * 60 * 1000,
+    refetchOnWindowFocus: false, // coming back from Share / the keyboard used to reload the feed
   });
 
   const posts = data?.pages.flatMap(p => p.posts) ?? [];
@@ -480,6 +482,9 @@ export default function Feed() {
 
       {/* Stories Bar */}
       <StoriesBar onCreateStory={() => openCreate('photo')} />
+
+      {/* Featured agencies (Pro / Yearly plans) */}
+      <FeaturedAgencies />
 
       {/* Create Post Box */}
       <div className="bg-card border rounded-2xl p-4 mb-5 shadow-sm">
@@ -558,7 +563,6 @@ export default function Feed() {
               key={post.id}
               post={post}
               onComment={setCommentPost}
-              onUpdate={refresh}
             />
           ))}
 

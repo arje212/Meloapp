@@ -66,6 +66,7 @@ const create = async (table, payload) => {
       throw error;
     }
 
+    console.warn(`[api] ${table}.create: column "${missingColumn}" not found in DB - field NOT saved.`);
     nextPayload = withoutColumn(nextPayload, missingColumn);
   }
 
@@ -84,6 +85,7 @@ const update = async (table, id, payload) => {
       throw error;
     }
 
+    console.warn(`[api] ${table}.update: column "${missingColumn}" not found in DB - field NOT saved.`);
     nextPayload = withoutColumn(nextPayload, missingColumn);
   }
 
@@ -122,6 +124,11 @@ export const Follows = entity('follows');
 export const TripReviews = entity('trip_reviews');
 export const Roadmaps = entity('roadmaps');
 export const AgencySubscriptions = entity('agency_subscriptions');
+// Used by AgencyDetail / AgencyDashboard but previously not mapped (calls threw TypeError).
+// NOTE: these tables must exist in Supabase (agency_reviews, agency_reports, agency_banners).
+export const AgencyReviews = entity('agency_reviews');
+export const AgencyReports = entity('agency_reports');
+export const AgencyBanners = entity('agency_banners');
 
 // Profiles — extended
 export const Profiles = {

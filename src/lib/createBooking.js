@@ -19,7 +19,7 @@ const DOWNPAYMENT_RATE = 0.3;
  * @param {number} params.commissionRate  - e.g. 10
  * @returns {Promise<Object>} created booking record
  */
-export async function createBooking({ pkg, agency, user, form, commissionRate = 10 }) {
+export async function createBooking({ pkg, agency, user, form, commissionRate = 10, extra = {} }) {
   const numPax      = Number(form.num_pax) || 1;
   const totalPrice  = (pkg.price || 0) * numPax;
   const downpayment = Math.round(totalPrice * DOWNPAYMENT_RATE);
@@ -68,6 +68,9 @@ export async function createBooking({ pkg, agency, user, form, commissionRate = 
     status:             'pending',
     commission_paid:    false,
     commission_confirmed: false,
+
+    // optional caller-specific fields (e.g. trip_id)
+    ...extra,
   });
 
   // fire-and-forget achievement

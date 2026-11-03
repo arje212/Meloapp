@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import {
   ArrowLeft, Send, Loader2, Mountain, ImagePlus, X,
   Users, UserPlus, Search, UsersRound, Info, Mic,
-  Phone, Video, Play, Pause, Reply, Copy, Trash2,
+  Play, Pause, Reply, Copy, Trash2,
   CheckCheck, Check, MoreHorizontal, Smile, ChevronDown, StopCircle,
   Pin, PinOff, ChevronUp,
 } from 'lucide-react';
@@ -349,6 +349,7 @@ function MessageBubble({ msg, isMe, isFirst, isLast, isGroup, isPinned, canPin, 
   const [showMenu, setShowMenu] = useState(false);
   const [showReactions, setShowReactions] = useState(false);
   // ✅ FIX: reactions initialized from msg._reactions and persisted on change
+  const { user: me } = useAuth();
   const [reactions, setReactions] = useState(msg._reactions || {});
   const [showImage, setShowImage] = useState(false);
 
@@ -360,12 +361,28 @@ function MessageBubble({ msg, isMe, isFirst, isLast, isGroup, isPinned, canPin, 
   const showName = !isMe && isGroup && isFirst;
 
   // ✅ FIX: persist reaction to DB
+  // FIX: reactions are now per-user (tap again to remove) and merged with the latest DB value
+  // so two people reacting at the same time don't overwrite each other.
+  // Legacy rows stored a plain number per emoji; those are converted to placeholder entries.
   const handleReact = async (emoji) => {
-    const updated = { ...reactions, [emoji]: (reactions[emoji] || 0) + 1 };
-    setReactions(updated);
+    const myId = me?.email;
+    if (!myId) return;
+    const previous = reactions;
     try {
+      let latest = previous;
+      const { data: fresh } = await supabase.from('chat_messages').select('_reactions').eq('id', msg.id).maybeSingle();
+      if (fresh?._reactions && typeof fresh._reactions === 'object') latest = fresh._reactions;
+      const current = latest[emoji];
+      const reactors = Array.isArray(current)
+        ? current
+        : Array.from({ length: Number(current) || 0 }, (_, i) => `legacy-${i}`);
+      const next = reactors.includes(myId) ? reactors.filter(e => e !== myId) : [...reactors, myId];
+      const updated = { ...latest };
+      if (next.length === 0) delete updated[emoji]; else updated[emoji] = next;
+      setReactions(updated);
       await base44.entities.ChatMessage.update(msg.id, { _reactions: updated });
     } catch (err) {
+      setReactions(previous);
       console.error('Reaction save failed:', err);
     }
   };
@@ -503,9 +520,10 @@ function MessageBubble({ msg, isMe, isFirst, isLast, isGroup, isPinned, canPin, 
           {Object.keys(reactions).length > 0 && (
             <div className={`flex gap-0.5 mt-0.5 ${isMe ? 'justify-end' : 'justify-start'}`}>
               <div className="flex items-center gap-0.5 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-full px-1.5 py-0.5 shadow-sm text-xs">
-                {Object.entries(reactions).map(([emoji, count]) => (
-                  <span key={emoji}>{emoji}{count > 1 ? count : ''}</span>
-                ))}
+                {Object.entries(reactions).map(([emoji, value]) => {
+                  const count = Array.isArray(value) ? value.length : Number(value) || 0;
+                  return count > 0 ? <span key={emoji}>{emoji}{count > 1 ? count : ''}</span> : null;
+                })}
               </div>
             </div>
           )}
@@ -709,7 +727,11 @@ export default function ChatRoom() {
 
   const { data: messages = [], isLoading } = useQuery({
     queryKey: ['messages', roomId],
-    queryFn: () => base44.entities.ChatMessage.filter({ room_id: roomId }, 'created_date', 200),
+    // FIX: previously sorted ascending + limit 200 = OLDEST 200 messages. Fetch newest 200, then show oldest->newest.
+    queryFn: async () => {
+      const rows = await base44.entities.ChatMessage.filter({ room_id: roomId }, '-created_date', 200);
+      return [...rows].reverse();
+    },
     enabled: !!roomId,
   });
 
@@ -759,8 +781,10 @@ export default function ChatRoom() {
   // ── Mark read ──────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!messages.length || !user?.email) return;
-    const unread = messages.filter(m => !m.is_read && m.sender_email !== user.email);
-    unread.forEach(m => base44.entities.ChatMessage.update(m.id, { is_read: true }));
+    const unreadIds = messages.filter(m => !m.is_read && m.sender_email !== user.email).map(m => m.id);
+    if (unreadIds.length === 0) return;
+    supabase.from('chat_messages').update({ is_read: true }).in('id', unreadIds)
+      .then(({ error }) => { if (error) console.warn('Mark-read failed:', error.message); });
   }, [messages, user?.email]);
 
   // ── Auto-scroll ────────────────────────────────────────────────────────────
@@ -964,12 +988,7 @@ export default function ChatRoom() {
         </div>
 
         <div className="flex items-center gap-1 shrink-0">
-          <button className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-blue-500" title="Voice call (coming soon)">
-            <Phone className="w-4 h-4" />
-          </button>
-          <button className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-blue-500" title="Video call (coming soon)">
-            <Video className="w-4 h-4" />
-          </button>
+          {/* voice / video call buttons removed: they were placeholders that did nothing */}
           {/* ✅ NEW: Search toggle button */}
           <button
             onClick={() => setShowSearch(s => !s)}

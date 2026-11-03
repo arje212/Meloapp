@@ -11,7 +11,7 @@ export default function AdminUsers() {
   const queryClient = useQueryClient();
   const { data: users = [], isLoading } = useQuery({
     queryKey: ['admin-users'],
-    queryFn: () => base44.entities.User.list('-created_date'),
+    queryFn: () => base44.entities.User.list('-created_date', 1000),
   });
 
   const handleBlock = async (user) => {

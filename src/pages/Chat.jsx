@@ -15,7 +15,7 @@ import {
   Search, Edit3,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
-import { getInitials } from '@/lib/chatHelpers';
+import { getInitials, fetchMyChatRooms } from '@/lib/chatHelpers';
 
 // ── Online dot ────────────────────────────────────────────────────────────────
 function OnlineDot({ size = 'md' }) {
@@ -122,8 +122,7 @@ export default function Chat() {
   const { data: rooms = [], isLoading } = useQuery({
     queryKey: ['chatrooms', user?.email],
     queryFn: async () => {
-      const all = await base44.entities.ChatRoom.list('-updated_date', 100);
-      return all.filter(r => r.participants?.includes(user.email));
+      return fetchMyChatRooms(user.email, { withUnread: true });
     },
     enabled: !!user?.email,
   });

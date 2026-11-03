@@ -4,12 +4,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Users, Mountain, Store, Package, CalendarDays, MessageSquare, DollarSign } from 'lucide-react';
 
 export default function AdminOverview() {
-  const { data: users = [] } = useQuery({ queryKey: ['admin-users'], queryFn: () => base44.entities.User.list('-created_date') });
+  const { data: users = [] } = useQuery({ queryKey: ['admin-users'], queryFn: () => base44.entities.User.list('-created_date', 1000) });
   const { data: mountains = [] } = useQuery({ queryKey: ['admin-mountains'], queryFn: () => base44.entities.Mountain.list() });
-  const { data: agencies = [] } = useQuery({ queryKey: ['admin-agencies'], queryFn: () => base44.entities.Agency.list() });
-  const { data: bookings = [] } = useQuery({ queryKey: ['admin-bookings'], queryFn: () => base44.entities.Booking.list() });
-  const { data: trips = [] } = useQuery({ queryKey: ['admin-trips'], queryFn: () => base44.entities.Trip.list() });
-  const { data: posts = [] } = useQuery({ queryKey: ['admin-posts'], queryFn: () => base44.entities.Post.list() });
+  const { data: agencies = [] } = useQuery({ queryKey: ['admin-agencies'], queryFn: () => base44.entities.Agency.list(undefined, 1000) });
+  const { data: bookings = [] } = useQuery({ queryKey: ['admin-bookings'], queryFn: () => base44.entities.Booking.list(undefined, 1000) });
+  const { data: trips = [] } = useQuery({ queryKey: ['admin-trips'], queryFn: () => base44.entities.Trip.list(undefined, 1000) });
+  const { data: posts = [] } = useQuery({ queryKey: ['admin-posts'], queryFn: () => base44.entities.Post.list(undefined, 1000) });
 
   const totalRevenue = bookings.reduce((sum, b) => sum + (b.total_price || 0), 0);
   const pendingAgencies = agencies.filter(a => a.status === 'pending').length;

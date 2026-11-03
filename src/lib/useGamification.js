@@ -2,6 +2,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { calculateLevel, XP_REWARDS, ACHIEVEMENT_CONDITIONS } from '@/lib/gamification';
+import { todayStr } from '@/lib/plans';
 
 // ========== USER GAMIFICATION STATE ==========
 export const useUserGamification = (userId) => {
@@ -39,30 +40,29 @@ export const useAddXP = () => {
     mutationFn: async ({ userId, xpAmount, reason }) => {
       if (!userId || !xpAmount) return null;
       
-      // Get current state
+      // Get current state (maybeSingle: a brand-new user has no row yet)
       const { data: current } = await supabase
         .from('user_gamification')
         .select('total_xp, current_xp, level')
         .eq('user_id', userId)
-        .single();
-      
+        .maybeSingle();
+
       const oldLevel = current?.level || 1;
       const newTotalXp = (current?.total_xp || 0) + xpAmount;
       const newLevel = calculateLevel(newTotalXp).level;
-      
-      // Update gamification
-      const { data, error } = await supabase
-        .from('user_gamification')
-        .update({
-          total_xp: newTotalXp,
-          current_xp: (current?.current_xp || 0) + xpAmount,
-        })
-        .eq('user_id', userId)
-        .select()
-        .single();
-      
+
+      // Update the row, or create it the first time (update alone failed for new users)
+      const row = {
+        total_xp: newTotalXp,
+        current_xp: (current?.current_xp || 0) + xpAmount,
+        level: newLevel,
+      };
+      const { data, error } = current
+        ? await supabase.from('user_gamification').update(row).eq('user_id', userId).select().single()
+        : await supabase.from('user_gamification').insert({ user_id: userId, ...row }).select().single();
+
       if (error) throw error;
-      
+
       // Log activity
       await supabase.from('activity_feed').insert({
         user_id: userId,
@@ -95,79 +95,53 @@ export const useAddXP = () => {
 };
 
 // ========== DAILY CHECK-IN ==========
+// Fixes: (1) "today" is the user's LOCAL date (it was UTC, so Manila users checking in before 8am
+// were counted on the previous day and streaks broke); (2) one check-in per day (XP could be
+// re-claimed); (3) streak row is updated/inserted explicitly (a plain upsert hit the UNIQUE(user_id)
+// constraint after day 1, so the streak never grew); (4) XP is awarded ONCE by useAddXP, not twice.
 export const useCheckIn = () => {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: async (userId) => {
       if (!userId) return null;
-      
-      // Get current streak
+
       const { data: streak } = await supabase
         .from('check_in_streak')
         .select('*')
         .eq('user_id', userId)
-        .single();
-      
-      const today = new Date().toISOString().split('T')[0];
-      const lastCheckIn = streak?.last_check_in;
-      
-      let newStreak = 1;
-      if (lastCheckIn) {
-        const yesterday = new Date(new Date().setDate(new Date().getDate() - 1))
-          .toISOString()
-          .split('T')[0];
-        
-        if (lastCheckIn === yesterday) {
-          newStreak = (streak?.streak_count || 0) + 1;
-        }
+        .maybeSingle();
+
+      const today = todayStr();
+      const lastCheckIn = streak?.last_check_in ? String(streak.last_check_in).slice(0, 10) : null;
+      if (lastCheckIn === today) {
+        return { streak, xpEarned: 0, alreadyCheckedIn: true };
       }
-      
-      // Update streak
-      const { data } = await supabase
-        .from('check_in_streak')
-        .upsert({
-          user_id: userId,
-          streak_count: newStreak,
-          last_check_in: today,
-          best_streak: Math.max(newStreak, streak?.best_streak || 0),
-        })
-        .select()
-        .single();
 
-      // Award XP by reading current gamification row and updating directly
-      const xpReward = XP_REWARDS.dailyCheckIn;
-      const { data: currentGam } = await supabase
-        .from('user_gamification')
-        .select('total_xp, current_xp')
-        .eq('user_id', userId)
-        .single();
+      const yesterdayDate = new Date();
+      yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+      const newStreak = lastCheckIn === todayStr(yesterdayDate) ? (streak?.streak_count || 0) + 1 : 1;
 
-      const newTotal = (currentGam?.total_xp || 0) + xpReward;
-      const newCurrent = (currentGam?.current_xp || 0) + xpReward;
+      const payload = {
+        streak_count: newStreak,
+        last_check_in: today,
+        best_streak: Math.max(newStreak, streak?.best_streak || 0),
+      };
+      const { data, error } = streak
+        ? await supabase.from('check_in_streak').update(payload).eq('user_id', userId).select().single()
+        : await supabase.from('check_in_streak').insert({ user_id: userId, ...payload }).select().single();
+      if (error) throw error;
 
-      await supabase
-        .from('user_gamification')
-        .upsert({
-          user_id: userId,
-          total_xp: newTotal,
-          current_xp: newCurrent,
-          level: calculateLevel(newTotal).level,
-        })
-        .select()
-        .single();
-      
-      // Log activity
       await supabase.from('activity_feed').insert({
         user_id: userId,
         activity_type: 'check_in',
-        title: `🎯 Daily Check-In Day ${newStreak}`,
+        title: `Daily Check-In Day ${newStreak}`,
         description: `Keep the adventure alive! ${newStreak} days in a row`,
-        icon: '🔥',
+        icon: '\u2705',
         is_public: false,
       });
-      
-      return { streak: data, xpEarned: xpReward };
+
+      return { streak: data, xpEarned: XP_REWARDS.dailyCheckIn };
     },
     onSuccess: (data, userId) => {
       queryClient.invalidateQueries(['user-gamification', userId]);

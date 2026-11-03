@@ -1,14 +1,27 @@
 import base44 from "@base44/vite-plugin"
 import react from '@vitejs/plugin-react'
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
+import path from 'path'
+import { fileURLToPath } from 'url'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 const isCapacitor = process.env.BUILD_TARGET === 'capacitor'
 
+// The Base44 plugin only does something when a Base44 app URL is configured (Base44 editor/hosting).
+// Without it the plugin just prints "Proxy not enabled", so it is only loaded when the variable is set.
+const env = loadEnv(process.env.NODE_ENV || 'development', process.cwd(), '')
+const useBase44 = Boolean(env.VITE_BASE44_APP_BASE_URL || process.env.VITE_BASE44_APP_BASE_URL)
+
 export default defineConfig({
-  logLevel: 'error',
+  // 'info' so the terminal shows "Local: http://localhost:1738/" (it was hidden with 'error')
+  logLevel: 'info',
+  // The '@/' import alias used all over src/. It used to come from the Base44 plugin, so it is
+  // defined here explicitly now that the plugin is optional.
+  resolve: { alias: { '@': path.resolve(__dirname, './src') } },
   plugins: [
-    base44({
+    useBase44 && base44({
       legacySDKImports: process.env.BASE44_LEGACY_SDK_IMPORTS === 'true',
       hmrNotifier: true,
       navigationNotifier: true,
@@ -70,6 +83,7 @@ export default defineConfig({
     }),
   ].filter(Boolean),  // ✅ alisin ang false values
   server: {
-    port: 1527,
+    port: 1738,
+    strictPort: true, // fail loudly instead of silently switching to another port
   },
 });

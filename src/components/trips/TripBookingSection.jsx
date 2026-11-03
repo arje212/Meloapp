@@ -11,7 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Clock, Users, Package, CheckCircle2, Loader2 } from 'lucide-react';
 
-const PLAN_COMMISSION = { free: 10, starter: 7, pro: 5, yearly: 3 };
+import { getCommissionRate as rateForPlan, pickActiveSubscription, todayStr } from '@/lib/plans';
+import { createBooking } from '@/lib/createBooking';
 
 export default function TripBookingSection({ trip }) {
   const { user } = useAuth();
@@ -24,6 +25,7 @@ export default function TripBookingSection({ trip }) {
   });
   const [isBooking, setIsBooking] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [formError, setFormError] = useState('');
 
   const { data: packages = [] } = useQuery({
     queryKey: ['trip-packages', trip?.mountain_name],
@@ -70,45 +72,56 @@ export default function TripBookingSection({ trip }) {
 
   const bookedPackageIds = new Set(myBookings.map(b => b.package_id));
 
-  const getCommissionRate = (agencyId) => {
-    const sub = subs.find(s => s.agency_id === agencyId);
-    return PLAN_COMMISSION[sub?.plan?.toLowerCase()] ?? PLAN_COMMISSION.free;
-  };
+  const getCommissionRate = (agencyId) =>
+    rateForPlan(pickActiveSubscription(subs.filter(s => s.agency_id === agencyId))?.plan);
 
   const handleBook = async () => {
-    if (!bookingPkg) return;
+    if (!bookingPkg || isBooking) return;
+    setFormError('');
+    const travelDate = bookForm.travel_date || trip.start_date || '';
+    const numPax = Number(bookForm.num_pax) || 1;
+
+    if (bookingPkg.max_pax && numPax > bookingPkg.max_pax) {
+      setFormError(`Maximum ${bookingPkg.max_pax} participants allowed.`);
+      return;
+    }
+
     setIsBooking(true);
     try {
-      const commissionRate = getCommissionRate(bookingPkg.agency_id);
-      const totalPrice = (bookingPkg.price || 0) * bookForm.num_pax;
-      const downpayment = Math.round(totalPrice * 0.3);
-      const balance = totalPrice - downpayment;
+      // Same slot check the agency page does (this path had none before).
+      if (bookingPkg.max_pax && travelDate) {
+        const { data: sameDay, error: slotErr } = await supabase
+          .from('bookings')
+          .select('num_pax, status')
+          .eq('package_id', bookingPkg.id)
+          .eq('travel_date', travelDate);
+        if (!slotErr && sameDay) {
+          const taken = sameDay
+            .filter(b => b.status !== 'cancelled')
+            .reduce((sum, b) => sum + (Number(b.num_pax) || 1), 0);
+          if (taken + numPax > bookingPkg.max_pax) {
+            setFormError(`Only ${Math.max(0, bookingPkg.max_pax - taken)} slot(s) left for this date.`);
+            setIsBooking(false);
+            return;
+          }
+        }
+      }
 
-      const { error } = await supabase.from('bookings').insert({
-        user_email: user.email,
-        package_id: bookingPkg.id,
-        agency_id: bookingPkg.agency_id,
-        agency_name: bookingPkg.agency_name,
-        trip_id: trip.id,
-        travel_date: bookForm.travel_date || trip.start_date || '',
-        num_pax: bookForm.num_pax,
-        notes: bookForm.notes,
-        payment_method: bookForm.payment_method,
-        pickup_location: bookForm.pickup_location,
-        dropoff_location: bookForm.dropoff_location,
-        meetup_location: bookForm.meetup_location,
-        contact_phone: bookForm.contact_phone,
-        total_price: totalPrice,
-        downpayment,
-        balance,
-        commission_rate: commissionRate,
-        status: 'pending',
+      // Use the shared helper so trip bookings store the same fields as agency-page bookings
+      // (downpayment_amount, balance_amount, platform_fee, agency_earnings, commission_rate...).
+      await createBooking({
+        pkg: bookingPkg,
+        agency: { id: bookingPkg.agency_id, name: bookingPkg.agency_name },
+        user,
+        form: { ...bookForm, travel_date: travelDate, num_pax: numPax },
+        commissionRate: getCommissionRate(bookingPkg.agency_id),
+        extra: { trip_id: trip.id },
       });
-      if (error) throw error;
       qc.invalidateQueries({ queryKey: ['my-trip-bookings'] });
       setSuccess(true);
     } catch (err) {
       console.error('Booking error:', err);
+      setFormError(err?.message || 'Booking failed. Please try again.');
     } finally {
       setIsBooking(false);
     }
@@ -122,6 +135,7 @@ export default function TripBookingSection({ trip }) {
       pickup_location: '', dropoff_location: '', meetup_location: '',
       contact_phone: '', date_mode: 'scheduled',
     });
+    setFormError('');
   };
 
   if (packages.length === 0) return null;
@@ -155,7 +169,7 @@ export default function TripBookingSection({ trip }) {
                   {pkg.duration_days && (
                     <span className="flex items-center gap-0.5"><Clock className="w-3 h-3" />{pkg.duration_days}d</span>
                   )}
-                  {pkg.max_pax && (
+                  {Number(pkg.max_pax) > 0 && (
                     <span className="flex items-center gap-0.5"><Users className="w-3 h-3" />Max {pkg.max_pax}</span>
                   )}
                 </div>
@@ -219,7 +233,7 @@ export default function TripBookingSection({ trip }) {
 
               <div>
                 <Label className="text-xs">Travel Date</Label>
-                <Input type="date" className="mt-1" min={new Date().toISOString().split('T')[0]}
+                <Input type="date" className="mt-1" min={todayStr()}
                   value={bookForm.travel_date || trip?.start_date || ''}
                   onChange={e => setBookForm(p => ({ ...p, travel_date: e.target.value }))} />
                 {trip?.start_date && <p className="text-xs text-muted-foreground mt-1">Trip starts: {trip.start_date}</p>}
@@ -269,6 +283,9 @@ export default function TripBookingSection({ trip }) {
                 </div>
               </div>
 
+              {formError && (
+                <p className="text-xs text-destructive bg-destructive/10 border border-destructive/30 rounded-xl px-3 py-2">{formError}</p>
+              )}
               <Button className="w-full rounded-full" onClick={handleBook} disabled={isBooking}>
                 {isBooking ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
                 Confirm Booking (₱{downpayment.toLocaleString()} downpayment)

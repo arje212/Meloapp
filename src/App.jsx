@@ -50,7 +50,7 @@ const AuthenticatedApp = () => {
   const [timedOut, setTimedOut] = useState(false);
 
   useEffect(() => {
-    const t = setTimeout(() => setTimedOut(true), 3000);
+    const t = setTimeout(() => setTimedOut(true), 8000);
     return () => clearTimeout(t);
   }, []);
 

@@ -11,7 +11,8 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 
-const PLAN_COMMISSION = { free: 10, starter: 7, pro: 5, yearly: 3 };
+import { PLAN_COMMISSION, pickActiveSubscription } from '@/lib/plans';
+import { isCommissionConfirmed, commissionConfirmPatch } from '@/lib/commission';
 
 const QUERY_KEYS = {
   completedBookings: ['admin-completed-bookings'],
@@ -28,14 +29,14 @@ export default function AdminCollectibles() {
   const { data: bookings = [], isLoading: loadingBookings } = useQuery({
     queryKey: QUERY_KEYS.completedBookings,
     queryFn: async () => {
-      const all = await base44.entities.Booking.filter({ status: 'completed' }, '-completed_at', 500);
+      const all = await base44.entities.Booking.filter({ status: ['completed', 'commission_sent', 'commission_confirmed'] }, '-completed_at', 1000);
       return all;
     },
   });
 
   const { data: agencies = [], isLoading: loadingAgencies } = useQuery({
     queryKey: QUERY_KEYS.agencies,
-    queryFn: () => base44.entities.Agency.list(),
+    queryFn: () => base44.entities.Agency.list(undefined, 1000),
   });
 
   const { data: subs = [] } = useQuery({
@@ -46,7 +47,13 @@ export default function AdminCollectibles() {
   const isLoading = loadingBookings || loadingAgencies;
 
   const agencyMap = agencies.reduce((acc, a) => { acc[a.id] = a; return acc; }, {});
-  const subMap    = subs.reduce((acc, s)     => { acc[s.agency_id] = s; return acc; }, {});
+  const subMap    = (() => {
+    const grouped = {};
+    subs.forEach((s) => { (grouped[s.agency_id] = grouped[s.agency_id] || []).push(s); });
+    const out = {};
+    Object.keys(grouped).forEach((k) => { out[k] = pickActiveSubscription(grouped[k]); });
+    return out;
+  })();
 
   const grouped = bookings.reduce((acc, b) => {
     const id = b.agency_id;
@@ -70,8 +77,8 @@ export default function AdminCollectibles() {
     const totalFee      = agencyBookings.reduce((s, b) => s + calcFee(b), 0);
     const totalEarnings = totalGross - totalFee;
 
-    const collectedBookings = agencyBookings.filter(b =>  b.commission_collected);
-    const pendingBookings   = agencyBookings.filter(b => !b.commission_collected);
+    const collectedBookings = agencyBookings.filter(b =>  isCommissionConfirmed(b));
+    const pendingBookings   = agencyBookings.filter(b => !isCommissionConfirmed(b));
     const pendingFee    = pendingBookings.reduce((s, b)   => s + calcFee(b), 0);
     const collectedFee  = collectedBookings.reduce((s, b) => s + calcFee(b), 0);
 
@@ -102,10 +109,7 @@ export default function AdminCollectibles() {
 
   const handleMarkCollected = async (bookingId) => {
     try {
-      await base44.entities.Booking.update(bookingId, {
-        commission_collected:    true,
-        commission_collected_at: new Date().toISOString(),
-      });
+      await base44.entities.Booking.update(bookingId, commissionConfirmPatch());
       invalidate();
     } catch (err) {
       alert('Error: ' + err.message);
@@ -116,10 +120,7 @@ export default function AdminCollectibles() {
     try {
       await Promise.all(
         bookingIds.map(id =>
-          base44.entities.Booking.update(id, {
-            commission_collected:    true,
-            commission_collected_at: new Date().toISOString(),
-          })
+          base44.entities.Booking.update(id, commissionConfirmPatch())
         )
       );
       invalidate();
@@ -281,7 +282,7 @@ export default function AdminCollectibles() {
                       const gross = b.actual_total_price || b.total_price || 0;
 
                       return (
-                        <div key={b.id} className={`p-3 ${b.commission_collected ? 'bg-muted/30' : 'bg-background'}`}>
+                        <div key={b.id} className={`p-3 ${isCommissionConfirmed(b) ? 'bg-muted/30' : 'bg-background'}`}>
                           <div className="flex items-start gap-3">
                             {b.completion_proof_url ? (
                               <a href={b.completion_proof_url} target="_blank" rel="noopener noreferrer" className="shrink-0">
@@ -311,7 +312,7 @@ export default function AdminCollectibles() {
                             </div>
 
                             <div className="shrink-0">
-                              {b.commission_collected ? (
+                              {isCommissionConfirmed(b) ? (
                                 <div className="flex items-center gap-1 text-green-600 text-[10px] font-medium">
                                   <CheckCircle className="w-3 h-3" /> Collected
                                 </div>

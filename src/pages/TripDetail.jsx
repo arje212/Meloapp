@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -65,7 +65,7 @@ async function getOrCreateTripGroupChat(trip, members, currentUser) {
   const goingMembers = members.filter(m => m.status === 'going');
 
   // Check if a group chat already exists for this trip
-  const allRooms = await base44.entities.ChatRoom.list('-updated_date', 200);
+  const allRooms = await base44.entities.ChatRoom.filter({ trip_id: trip.id }, '-updated_date', 200);
   const existing = allRooms.find(r => r.trip_id === trip.id && r.type === 'group');
   if (existing) return existing;
 
@@ -102,7 +102,7 @@ async function getOrCreateTripGroupChat(trip, members, currentUser) {
  */
 async function addMemberToTripGroupChat(trip, memberEmail, memberName) {
   try {
-    const allRooms = await base44.entities.ChatRoom.list('-updated_date', 200);
+    const allRooms = await base44.entities.ChatRoom.filter({ trip_id: trip.id }, '-updated_date', 200);
     const groupChat = allRooms.find(r => r.trip_id === trip.id && r.type === 'group');
     if (!groupChat || groupChat.participants?.includes(memberEmail)) return;
     await base44.entities.ChatRoom.update(groupChat.id, {
@@ -119,7 +119,7 @@ export default function TripDetail() {
   const navigate     = useNavigate();
   const { user }     = useAuth();
   const queryClient  = useQueryClient();
-  const tripId       = window.location.pathname.split('/trips/')[1];
+  const { id: tripId } = useParams();   // was parsed from window.location, which broke on a trailing slash
 
   const [inviteEmail,        setInviteEmail]        = useState('');
   const [inviteName,         setInviteName]         = useState('');
@@ -129,6 +129,7 @@ export default function TripDetail() {
   const [isCreatingGroupChat,setIsCreatingGroupChat]= useState(false);
   const [isSharing,          setIsSharing]          = useState(false);
   const [shareSuccess,       setShareSuccess]       = useState(false);
+  const [joinError,          setJoinError]          = useState('');
 
   // ── Queries ────────────────────────────────────────────────────────────────
   const { data: trip, isLoading } = useQuery({
@@ -161,6 +162,13 @@ export default function TripDetail() {
 
   // ── RSVP ──────────────────────────────────────────────────────────────────
   const handleJoin = async (status) => {
+    setJoinError('');
+    const alreadyGoing = myMembership?.status === 'going';
+    if (status === 'going' && !alreadyGoing && trip?.max_participants && goingCount >= Number(trip.max_participants)) {
+      setJoinError(`This trip is full (${goingCount}/${trip.max_participants}).`);
+      return;
+    }
+    try {
     const wasAlreadyGoing = myMembership?.status === 'going';
 
     if (myMembership) {
@@ -209,6 +217,11 @@ export default function TripDetail() {
     }
 
     queryClient.invalidateQueries({ queryKey: ['trip-members', tripId] });
+    } catch (err) {
+      console.error('RSVP failed:', err);
+      setJoinError(/full/i.test(err?.message || '') ? 'This trip is already full.' : 'Could not save your response. Please try again.');
+      queryClient.invalidateQueries({ queryKey: ['trip-members', tripId] });
+    }
   };
 
   // ── Share to feed ──────────────────────────────────────────────────────────
@@ -270,7 +283,7 @@ export default function TripDetail() {
     if (!organizerEmail || !user?.email) return;
     setIsMessaging(true);
     try {
-      const allRooms = await base44.entities.ChatRoom.list('-updated_date', 200);
+      const allRooms = await base44.entities.ChatRoom.filter({ trip_id: tripId }, '-updated_date', 200);
       const existingRoom = allRooms.find(r =>
         r.trip_id === tripId &&
         r.type !== 'group' &&
@@ -375,7 +388,7 @@ export default function TripDetail() {
               <span>₱{trip.budget_estimate?.toLocaleString()}</span>
             </div>
           )}
-          {trip.price && trip.payment_required && (
+          {Number(trip.price) > 0 && trip.payment_required && (
             <div className="flex items-center gap-2 text-sm">
               <Wallet className="w-4 h-4 text-green-600" />
               <span className="text-green-700 font-medium">Fee: ₱{Number(trip.price).toLocaleString()}</span>
@@ -482,6 +495,7 @@ export default function TripDetail() {
       {trip.status === 'open' && (
         <div className="bg-card border rounded-2xl p-5 mt-4">
           <h3 className="font-semibold mb-3">Your response</h3>
+          {joinError && <p className="text-xs text-destructive bg-destructive/10 border border-destructive/30 rounded-xl px-3 py-2 mb-2">{joinError}</p>}
           <div className="flex gap-2">
             {['going', 'maybe', 'not_going'].map(s => (
               <Button

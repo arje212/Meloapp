@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { fetchMyChatRooms } from '@/lib/chatHelpers';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { useAuth } from '@/lib/AuthContext';
@@ -12,24 +13,20 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   ArrowLeft, Store, MapPin, Star, CheckCircle, MessageCircle,
   Mountain, Clock, Users, Loader2, CheckCircle2, Phone,
-  LayoutDashboard, Wallet, AlertTriangle, Copy, Check, Info,
+  LayoutDashboard, AlertTriangle, Check, Info,
   Camera, Shield, Award, Calendar, Globe, Facebook, Instagram,
   ChevronLeft, ChevronRight, X, ZoomIn, ImageOff, ThumbsUp,
   BadgeCheck, FileText, Flag, Share2,
   Bookmark, BookmarkCheck, Timer, UserCheck,
-  Megaphone, ClipboardList, CheckSquare, UserPlus, Ticket,
-  CreditCard, DollarSign, TrendingUp, ChevronDown, Upload, Receipt,
+  Megaphone, ClipboardList, CheckSquare, UserPlus, CreditCard, TrendingUp, Upload, Receipt,
 } from 'lucide-react';
 import { unlockAchievement } from '@/lib/achievements';
 import { uploadFile } from '@/lib/uploadFile';
 import { createBooking } from '@/lib/createBooking';
+import { getCommissionRate, pickActiveSubscription, todayStr as localToday } from '@/lib/plans';
+import PlanBadge from '@/components/agencies/PlanBadge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
-const ADMIN_GCASH_NUMBER = '09750944563';
-const ADMIN_GCASH_NAME   = 'Melotrip Admin';
-const PLAN_COMMISSION = { free: 10, starter: 7, pro: 5, yearly: 3 };
-const getCommissionRate = (planName) =>
-  PLAN_COMMISSION[planName?.toLowerCase()] ?? PLAN_COMMISSION.free;
 
 const asList = (value) => Array.isArray(value)
   ? value.filter(Boolean)
@@ -64,25 +61,6 @@ const countBookedPax = (bookingsForPkg = [], travelDate) => {
     .filter(b => b && b.status !== 'cancelled' && (travelDate ? b.travel_date === travelDate : true))
     .reduce((sum, b) => sum + (Number(b.num_pax) || 1), 0);
 };
-
-function GCashCommissionPanel({ platformFee, commissionRate, agencyEarnings }) {
-  const [copied, setCopied] = useState(false);
-  const handleCopy = () => { navigator.clipboard.writeText(ADMIN_GCASH_NUMBER); setCopied(true); setTimeout(() => setCopied(false), 2000); };
-  return (
-    <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-3">
-      <div className="flex items-center gap-2 text-blue-800 font-semibold text-sm"><Wallet className="w-4 h-4" />Commission Payment — Send to Admin GCash</div>
-      <div className="bg-white rounded-lg border border-blue-200 p-3 flex items-center justify-between gap-3">
-        <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">GCash Number</p><p className="font-bold text-xl tracking-widest text-blue-800">{ADMIN_GCASH_NUMBER}</p><p className="text-xs text-muted-foreground">{ADMIN_GCASH_NAME}</p></div>
-        <button onClick={handleCopy} className="flex items-center gap-1.5 text-xs border border-blue-200 rounded-lg px-3 py-2 text-blue-700 hover:bg-blue-100 transition-colors shrink-0">{copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}{copied ? 'Copied!' : 'Copy'}</button>
-      </div>
-      <div className="bg-white rounded-lg border border-blue-200 p-3 space-y-2">
-        <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Amount to Send</p>
-        <p className="font-bold text-2xl text-blue-800">P{platformFee.toLocaleString()}</p>
-        <div className="flex flex-wrap gap-2 text-xs"><span className="bg-blue-50 border border-blue-100 rounded px-2 py-0.5 text-blue-700">{commissionRate}% platform commission</span><span className="bg-green-50 border border-green-100 rounded px-2 py-0.5 text-green-700">You keep: P{agencyEarnings.toLocaleString()}</span></div>
-      </div>
-    </div>
-  );
-}
 
 function PhotoLightbox({ photos, startIndex, onClose }) {
   const [current, setCurrent] = useState(startIndex);
@@ -170,67 +148,6 @@ function StarRatingInput({ value, onChange }) {
   );
 }
 
-function BookingStatusTracker({ bookings = [] }) {
-  const [expanded, setExpanded] = useState(null);
-  if (!bookings.length) return null;
-  const activeBookings = bookings.filter(b => b.status !== 'cancelled');
-  if (!activeBookings.length) return null;
-  const steps = ['pending', 'confirmed', 'completed'];
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-2 mb-1"><Ticket className="w-5 h-5 text-primary" /><p className="font-semibold text-sm">My Bookings ({activeBookings.length})</p></div>
-      {activeBookings.map(booking => {
-        const cfg = BOOKING_STATUS_CONFIG[booking.status] || BOOKING_STATUS_CONFIG.pending;
-        const Icon = cfg.icon;
-        const normalizedStatus = booking.status === 'paid' ? 'confirmed' : (booking.status === 'commission_sent' || booking.status === 'commission_confirmed') ? 'completed' : booking.status;
-        const stepIdx = steps.indexOf(normalizedStatus);
-        const isOpen = expanded === booking.id;
-        const dp = Math.round((booking.total_price || 0) * DOWNPAYMENT_RATE);
-        const bal = (booking.total_price || 0) - dp;
-        return (
-          <div key={booking.id} className="bg-card border rounded-2xl overflow-hidden">
-            <button onClick={() => setExpanded(isOpen ? null : booking.id)} className="w-full flex items-center gap-3 p-3 text-left hover:bg-muted/40 transition-colors">
-              <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${cfg.color}`}><Icon className="w-4 h-4" /></div>
-              <div className="flex-1 min-w-0"><p className="text-sm font-semibold truncate">{booking.package_title}</p><p className="text-xs text-muted-foreground">{booking.travel_date} · {booking.num_pax} pax</p></div>
-              <div className="flex items-center gap-2 shrink-0"><span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${cfg.color}`}>{cfg.label}</span><ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${isOpen ? 'rotate-180' : ''}`} /></div>
-            </button>
-            {isOpen && (
-              <div className="border-t border-border px-3 pb-3 pt-3 space-y-3">
-                <div className={`flex items-start gap-2 rounded-xl p-2.5 text-xs border ${cfg.color}`}><Icon className="w-3.5 h-3.5 shrink-0 mt-0.5" /><span>{cfg.desc}</span></div>
-                <div className="flex items-center gap-0">
-                  {steps.map((step, i) => { const isDone = stepIdx >= i; const isCurrent = stepIdx === i; return (
-                    <div key={step} className="flex items-center flex-1">
-                      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold border-2 shrink-0 transition-all ${isDone ? 'bg-primary border-primary text-white' : 'bg-background border-border text-muted-foreground'} ${isCurrent ? 'ring-2 ring-primary/30 ring-offset-1' : ''}`}>{isDone ? <Check className="w-3.5 h-3.5" /> : i + 1}</div>
-                      {i < steps.length - 1 && <div className={`flex-1 h-0.5 ${stepIdx > i ? 'bg-primary' : 'bg-border'}`} />}
-                    </div>
-                  ); })}
-                </div>
-                <div className="flex justify-between text-[10px] text-muted-foreground -mt-1"><span>Pending</span><span>Confirmed</span><span>Completed</span></div>
-                <div className="bg-muted rounded-xl p-3 space-y-2">
-                  <p className="text-xs font-semibold">Payment Details</p>
-                  <div className="space-y-1.5 text-xs">
-                    <div className="flex justify-between"><span className="text-muted-foreground">Total</span><span className="font-bold">P{booking.total_price?.toLocaleString()}</span></div>
-                    <div className="flex justify-between text-green-700"><span className="flex items-center gap-1"><CreditCard className="w-3 h-3" />Downpayment (30%)</span><span className="font-semibold">P{dp.toLocaleString()}</span></div>
-                    <div className={`flex justify-between ${booking.status === 'completed' ? 'text-muted-foreground line-through' : 'text-amber-700'}`}><span className="flex items-center gap-1"><DollarSign className="w-3 h-3" />Balance (on meetup)</span><span className="font-semibold">P{bal.toLocaleString()}</span></div>
-                  </div>
-                  {booking.status === 'confirmed' && <div className="rounded-lg bg-amber-50 border border-amber-200 p-2 text-[11px] text-amber-800 mt-1">I-prepare ang <strong>P{bal.toLocaleString()}</strong> para sa meetup.</div>}
-                </div>
-                {booking.dp_receipt_url && (
-                  <div className="rounded-xl border overflow-hidden">
-                    <img src={booking.dp_receipt_url} alt="DP receipt" className="w-full h-28 object-cover object-top" />
-                    <div className="p-2 bg-emerald-50 flex items-center gap-2 text-xs text-emerald-800"><Receipt className="w-3 h-3 shrink-0" /><span className="font-medium">Downpayment receipt submitted</span></div>
-                  </div>
-                )}
-                {booking.pickup_location && <div className="flex items-start gap-2 rounded-xl bg-blue-50 border border-blue-200 p-2.5 text-xs text-blue-800"><MapPin className="w-3.5 h-3.5 shrink-0 mt-0.5" /><div><p className="font-semibold">Meetup / Pickup Point</p><p>{booking.pickup_location}</p></div></div>}
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 function JoinerSlotsTab({ agencyId, packages, user, isAgencyOwner, onBook }) {
   const { data: joinerSlots = [], isLoading } = useQuery({
     queryKey: ['joiner-slots', agencyId],
@@ -263,73 +180,13 @@ function JoinerSlotsTab({ agencyId, packages, user, isAgencyOwner, onBook }) {
                   <div className={`shrink-0 text-xs font-semibold px-2.5 py-1 rounded-full border ${isFull ? 'bg-red-100 text-red-700 border-red-200' : available <= 2 ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-emerald-100 text-emerald-700 border-emerald-200'}`}>{isFull ? 'FULL' : `${available} slot${available !== 1 ? 's' : ''} left`}</div>
                 </div>
                 <div className="space-y-1 mb-3"><div className="flex justify-between text-[10px] text-muted-foreground"><span>{joined}/{slot.max_joiners || '?'} joiners</span><span>{fillPct}% full</span></div><div className="w-full h-2 rounded-full bg-muted overflow-hidden"><div className={`h-full rounded-full transition-all ${isFull ? 'bg-red-500' : fillPct >= 70 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${Math.min(fillPct, 100)}%` }} /></div></div>
-                {slot.joiner_price && (
+                {Number(slot.joiner_price) > 0 && (
                   <div className="flex items-center justify-between">
                     <div><p className="text-lg font-bold text-primary">P{slot.joiner_price?.toLocaleString()}</p><p className="text-[10px] text-muted-foreground">per joiner</p></div>
                     {!isAgencyOwner && !isFull && user && <Button size="sm" className="rounded-full" onClick={() => onBook(slot)}><UserPlus className="w-3.5 h-3.5 mr-1" />Join Slot</Button>}
                   </div>
                 )}
               </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function AvailabilityCalendar({ pkg, bookingsForPkg = [] }) {
-  const today = new Date();
-  const [viewMonth, setViewMonth] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
-  const availableDates = new Set(pkg.available_dates || []);
-  const maxPax = pkg.max_pax || 99;
-  const getDayStatus = (dateStr) => {
-    if (!availableDates.has(dateStr)) return 'unavailable';
-    const booked = countBookedPax(bookingsForPkg, dateStr);
-    if (booked >= maxPax) return 'full';
-    if (booked >= maxPax * 0.7) return 'almost';
-    return 'available';
-  };
-  const year = viewMonth.getFullYear();
-  const month = viewMonth.getMonth();
-  const firstDay = new Date(year, month, 1).getDay();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const prevMonth = () => setViewMonth(new Date(year, month - 1, 1));
-  const nextMonth = () => setViewMonth(new Date(year, month + 1, 1));
-  const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-  const monthName = viewMonth.toLocaleDateString('en-PH', { month: 'long', year: 'numeric' });
-  const cells = [];
-  for (let i = 0; i < firstDay; i++) cells.push(null);
-  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
-  if (!(pkg.available_dates || []).length) return null;
-  return (
-    <div className="bg-card border rounded-2xl p-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <p className="text-sm font-semibold">Availability Calendar</p>
-        <div className="flex items-center gap-1">
-          <button onClick={prevMonth} className="w-7 h-7 rounded-lg border flex items-center justify-center hover:bg-muted transition-colors"><ChevronLeft className="w-3.5 h-3.5" /></button>
-          <span className="text-xs font-medium px-2 min-w-[110px] text-center">{monthName}</span>
-          <button onClick={nextMonth} className="w-7 h-7 rounded-lg border flex items-center justify-center hover:bg-muted transition-colors"><ChevronRight className="w-3.5 h-3.5" /></button>
-        </div>
-      </div>
-      <div className="flex flex-wrap gap-3 text-[10px]">
-        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-emerald-500 inline-block" />Available</span>
-        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-amber-400 inline-block" />Almost Full</span>
-        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-red-500 inline-block" />Full</span>
-      </div>
-      <div className="grid grid-cols-7 gap-0.5">
-        {dayNames.map(d => <div key={d} className="text-center text-[10px] text-muted-foreground font-medium py-1">{d}</div>)}
-        {cells.map((day, i) => {
-          if (!day) return <div key={`e-${i}`} />;
-          const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-          const status = getDayStatus(dateStr);
-          const isPast = new Date(dateStr) < new Date(today.toDateString());
-          const booked = countBookedPax(bookingsForPkg, dateStr);
-          return (
-            <div key={day} title={status !== 'unavailable' ? `${booked}/${maxPax} booked` : undefined}
-              className={`relative aspect-square rounded-lg flex items-center justify-center text-xs font-medium transition-colors ${isPast ? 'opacity-30' : ''} ${status === 'available' ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200 cursor-pointer' : ''} ${status === 'almost' ? 'bg-amber-100 text-amber-800 hover:bg-amber-200 cursor-pointer' : ''} ${status === 'full' ? 'bg-red-100 text-red-700 cursor-not-allowed' : ''} ${status === 'unavailable' ? 'text-muted-foreground' : ''}`}>
-              {day}
-              {status !== 'unavailable' && <span className={`absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full ${status === 'full' ? 'bg-red-500' : status === 'almost' ? 'bg-amber-400' : 'bg-emerald-500'}`} />}
             </div>
           );
         })}
@@ -350,13 +207,19 @@ function ReviewsTab({ agencyId, user }) {
     queryFn: () => base44.entities.AgencyReview.filter({ agency_id: agencyId }),
     enabled: !!agencyId,
   });
+  const [formError, setFormError] = useState('');
   const avgRating = reviews.length ? (reviews.reduce((s, r) => s + (r.rating || 0), 0) / reviews.length).toFixed(1) : null;
   const handleSubmit = async () => {
     if (!rating) return;
-    setSubmitting(true);
+    setSubmitting(true); setFormError('');
+    try {
     await base44.entities.AgencyReview.create({ agency_id: agencyId, user_email: user.email, user_name: user.full_name || user.email, rating, comment, created_date: new Date().toISOString() });
     queryClient.invalidateQueries(['agency-reviews', agencyId]);
-    setSubmitting(false); setSubmitted(true); setShowForm(false); setRating(0); setComment('');
+    setSubmitted(true); setShowForm(false); setRating(0); setComment('');
+    } catch (err) {
+      console.error('Review failed:', err);
+      setFormError(/duplicate|unique/i.test(err?.message || '') ? 'You already reviewed this agency.' : 'Could not save your review. Please try again.');
+    } finally { setSubmitting(false); }
   };
   const distrib = [5,4,3,2,1].map(n => ({ n, count: reviews.filter(r => r.rating === n).length }));
   return (
@@ -374,6 +237,7 @@ function ReviewsTab({ agencyId, user }) {
           <p className="text-sm font-medium">Your Rating</p>
           <StarRatingInput value={rating} onChange={setRating} />
           <div><Label>Comment <span className="text-muted-foreground text-xs">(optional)</span></Label><Textarea placeholder="Share your experience..." value={comment} onChange={e => setComment(e.target.value)} className="resize-none mt-1" rows={3} /></div>
+          {formError && <p className="text-xs text-destructive">{formError}</p>}
           <Button className="w-full rounded-full" onClick={handleSubmit} disabled={!rating || submitting}>{submitting && <Loader2 className="w-4 h-4 animate-spin mr-2" />}Submit Review</Button>
         </div>
       )}
@@ -412,7 +276,7 @@ function GuidesTab({ agency, isAgencyOwner }) {
 }
 
 function ScheduleTab({ packages, bookingsByPkg = {} }) {
-  const today = new Date().toISOString().split('T')[0];
+  const today = localToday();
   const allTrips = packages.flatMap(pkg => {
     const pkgBookings = bookingsByPkg[pkg.id] || [];
     return (pkg.available_dates || []).filter(d => d >= today).map(d => {
@@ -509,11 +373,17 @@ function ReportModal({ agency, user, onClose }) {
   const [details, setDetails] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
+  const [reportError, setReportError] = useState('');
   const handleSubmit = async () => {
     if (!reason) return;
-    setSubmitting(true);
+    setSubmitting(true); setReportError('');
+    try {
     await base44.entities.AgencyReport.create({ agency_id: agency.id, agency_name: agency.name, reported_by: user.email, reason, details, status: 'pending', created_date: new Date().toISOString() });
-    setSubmitting(false); setDone(true);
+    setDone(true);
+    } catch (err) {
+      console.error('Report failed:', err);
+      setReportError('Could not send your report. Please try again.');
+    } finally { setSubmitting(false); }
   };
   return (
     <Dialog open onOpenChange={onClose}>
@@ -525,6 +395,7 @@ function ReportModal({ agency, user, onClose }) {
           <div className="space-y-4">
             <div><Label>Reason *</Label><Select value={reason} onValueChange={setReason}><SelectTrigger className="mt-1"><SelectValue placeholder="Select a reason" /></SelectTrigger><SelectContent>{REPORT_REASONS.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}</SelectContent></Select></div>
             <div><Label>Additional Details <span className="text-muted-foreground text-xs">(optional)</span></Label><Textarea placeholder="Describe the issue..." value={details} onChange={e => setDetails(e.target.value)} className="resize-none mt-1" rows={4} /></div>
+            {reportError && <p className="text-xs text-destructive">{reportError}</p>}
             <div className="flex gap-2"><Button variant="outline" className="flex-1 rounded-full" onClick={onClose}>Cancel</Button><Button variant="destructive" className="flex-1 rounded-full" onClick={handleSubmit} disabled={!reason || submitting}>{submitting && <Loader2 className="w-4 h-4 animate-spin mr-2" />}Submit Report</Button></div>
           </div>
         )}
@@ -586,13 +457,13 @@ export default function AgencyDetail() {
   const [bookingSuccess, setBookingSuccess] = useState(false);
   const [newBookingId, setNewBookingId] = useState(null);
   const [chatLoading, setChatLoading] = useState(false);
+  const [chatError, setChatError] = useState('');
   const [activeTab, setActiveTab] = useState('packages');
   const [formError, setFormError] = useState('');
   const [showReport, setShowReport] = useState(false);
   const [saved, setSaved] = useState(false);
   const [shareMsg, setShareMsg] = useState('');
   const [sharePkg, setSharePkg] = useState(null);
-  const [selectedPkgForCalendar, setSelectedPkgForCalendar] = useState(null);
   const [pkgDetailsView, setPkgDetailsView] = useState(null);
 
   // Downpayment receipt upload states
@@ -646,18 +517,17 @@ export default function AgencyDetail() {
   const allAgencyBookings = Object.values(bookingsByPkg).flat();
 
   // Derived
-  const agencyPlan = agencySubs[0]?.plan ?? 'free';
+  const agencyPlan = pickActiveSubscription(agencySubs)?.plan ?? 'free';
   const commissionRate = getCommissionRate(agencyPlan);
   const totalPrice = (bookingPkg?.price || 0) * bookForm.num_pax;
   const downpayment = Math.round(totalPrice * DOWNPAYMENT_RATE);
   const balance = totalPrice - downpayment;
   const platformFee = Math.round(totalPrice * commissionRate / 100);
-  const agencyEarnings = totalPrice - platformFee;
   const isAgencyOwner = user?.email === agency?.owner_email;
   const galleryPhotos = agency?.gallery_photos?.length ? agency.gallery_photos : agency?.cover_url ? [agency.cover_url] : [];
   const avgRating = reviews.length ? (reviews.reduce((s, r) => s + (r.rating || 0), 0) / reviews.length).toFixed(1) : null;
   const specialtyMountains = [...new Set(packages.map(p => p.mountain_name).filter(Boolean))];
-  const today = new Date().toISOString().split('T')[0];
+  const today = localToday();
   const futureDates = (bookingPkg?.available_dates || []).filter(d => d >= today).sort();
   const allDatesExpired = (bookingPkg?.available_dates?.length > 0) && futureDates.length === 0;
   const allowCustomDates = bookingPkg?.allow_custom_dates !== false;
@@ -700,6 +570,15 @@ export default function AgencyDetail() {
     const slots = availableSlotsForDate(bookForm.travel_date);
     if (slots !== null && bookForm.num_pax > slots) { setFormError(`${slots} slot${slots !== 1 ? 's' : ''} na lang ang natitira.`); return; }
     if (bookingPkg?.max_pax && bookForm.num_pax > bookingPkg.max_pax) { setFormError(`Maximum ${bookingPkg.max_pax} participants allowed.`); return; }
+
+    // Duplicate guard: same user + package + date with an active booking
+    try {
+      const mine = await base44.entities.Booking.filter({ package_id: bookingPkg.id, user_email: user.email });
+      if (mine.some(b => b.travel_date === bookForm.travel_date && !['cancelled', 'refunded'].includes(b.status))) {
+        setFormError('May active booking ka na sa package at date na ito.');
+        return;
+      }
+    } catch { /* if the check fails, don't block the booking */ }
 
     setIsBooking(true);
     try {
@@ -769,14 +648,32 @@ export default function AgencyDetail() {
   };
 
   const handleChat = async () => {
-    if (!user || !agency) return;
+    if (!user || !agency || chatLoading) return;
+    setChatError('');
+    if (!agency.owner_email) { setChatError('This agency has no contact account yet.'); return; }
+    if (agency.owner_email.toLowerCase() === (user.email || '').toLowerCase()) { navigate('/chat'); return; }   // your own agency
     setChatLoading(true);
     try {
-      const existing = await base44.entities.ChatRoom.filter({ type: 'direct', agency_id: agencyId, initiated_by: user.email });
-      if (existing?.length > 0) { navigate(`/chat/${existing[0].id}`); return; }
-      const room = await base44.entities.ChatRoom.create({ name: agency.name, type: 'direct', participants: [user.email, agency.owner_email], participant_names: [user.full_name || user.email, agency.name], agency_id: agencyId, initiated_by: user.email });
+      // The old lookup filtered on agency_id / initiated_by columns that chat_rooms may not have, so it threw
+      // and nothing happened. Look through MY rooms instead and reuse the direct chat with this owner.
+      const mine = await fetchMyChatRooms(user.email);
+      const owner = agency.owner_email.toLowerCase();
+      const existing = mine.find((r) => !r.trip_id && (r.participants || []).length === 2 &&
+        (r.participants || []).some((e) => String(e).toLowerCase() === owner));
+      if (existing) { navigate(`/chat/${existing.id}`); return; }
+      const room = await base44.entities.ChatRoom.create({
+        name: agency.name, type: 'direct',
+        participants: [user.email, agency.owner_email],
+        participant_names: [user.full_name || user.email, agency.name],
+        agency_id: agencyId, initiated_by: user.email,
+      });
       navigate(`/chat/${room.id}`);
-    } catch (err) { console.error(err); } finally { setChatLoading(false); }
+    } catch (err) {
+      console.error('Open chat failed:', err);
+      setChatError(`Could not open the chat. Please try again.${err?.message ? ` (${String(err.message).slice(0, 120)})` : ''}`);
+    } finally {
+      setChatLoading(false);
+    }
   };
 
   if (isLoading) return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
@@ -806,26 +703,27 @@ export default function AgencyDetail() {
         </div>
         <div className="p-5 -mt-8 relative">
           <div className="w-16 h-16 rounded-xl bg-card border-2 border-background shadow-lg flex items-center justify-center overflow-hidden mb-3">{agency.logo_url ? <img src={agency.logo_url} alt={agency.name} className="w-full h-full object-cover" /> : <Store className="w-7 h-7 text-primary" />}</div>
-          <div className="flex items-start justify-between gap-2 flex-wrap">
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap"><h1 className="font-display text-2xl font-bold">{agency.name}</h1>{agency.is_verified && <CheckCircle className="w-5 h-5 text-emerald-500 fill-emerald-100 shrink-0" />}</div>
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+            <div className="w-full sm:flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap"><h1 className="font-display text-2xl font-bold break-words">{agency.name}</h1><PlanBadge plan={agencyPlan} />{agency.is_verified && <CheckCircle className="w-5 h-5 text-emerald-500 fill-emerald-100 shrink-0" />}</div>
               {agencyPlan !== 'free' && <span className={`inline-flex items-center gap-1 text-[11px] font-medium border rounded-full px-2 py-0.5 mt-1 ${trustBadge.color}`}><trustBadge.icon className="w-3 h-3" />{trustBadge.label}</span>}
               {agency.location && <p className="text-sm text-muted-foreground flex items-center gap-1 mt-2"><MapPin className="w-4 h-4" />{agency.location}</p>}
-              <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground flex-wrap">
-                {(avgRating || agency.rating) && <span className="flex items-center gap-1"><Star className="w-4 h-4 text-yellow-500 fill-yellow-400" /><span className="font-medium text-foreground">{avgRating || agency.rating}</span>{reviews.length > 0 && <span className="text-xs">({reviews.length})</span>}</span>}
-                <span className="flex items-center gap-1"><CheckCircle2 className="w-4 h-4 text-primary" />{agency.total_bookings || 0} bookings</span>
-                {agency.years_operating && <span className="flex items-center gap-1"><Calendar className="w-4 h-4" />{agency.years_operating}y in business</span>}
-                {agency.response_time && <span className="flex items-center gap-1"><Timer className="w-4 h-4" />Replies in {agency.response_time}</span>}
+              <div className="flex items-center gap-x-4 gap-y-1 mt-2 text-sm text-muted-foreground flex-wrap">
+                {Number(avgRating || agency.rating) > 0 && <span className="flex items-center gap-1 whitespace-nowrap"><Star className="w-4 h-4 text-yellow-500 fill-yellow-400" /><span className="font-medium text-foreground">{avgRating || agency.rating}</span>{reviews.length > 0 && <span className="text-xs">({reviews.length})</span>}</span>}
+                <span className="flex items-center gap-1 whitespace-nowrap"><CheckCircle2 className="w-4 h-4 text-primary" />{agency.total_bookings || 0} bookings</span>
+                {Number(agency.years_operating) > 0 && <span className="flex items-center gap-1 whitespace-nowrap"><Calendar className="w-4 h-4" />{agency.years_operating}y in business</span>}
+                {agency.response_time && <span className="flex items-center gap-1 whitespace-nowrap"><Timer className="w-4 h-4" />Replies in {agency.response_time}</span>}
               </div>
-              {specialtyMountains.length > 0 && <div className="flex flex-wrap gap-1 mt-3">{specialtyMountains.map((m, i) => <span key={i} className="inline-flex items-center gap-1 text-[11px] bg-muted text-muted-foreground rounded-full px-2 py-0.5"><Mountain className="w-3 h-3" />{m}</span>)}</div>}
+              {specialtyMountains.length > 0 && <div className="flex flex-wrap gap-1 mt-3">{specialtyMountains.map((m, i) => <span key={i} className="inline-flex items-center gap-1 whitespace-nowrap text-[11px] bg-muted text-muted-foreground rounded-full px-2 py-0.5"><Mountain className="w-3 h-3" />{m}</span>)}</div>}
             </div>
-            <div className="flex gap-2 flex-wrap items-center">
+            <div className="flex gap-2 flex-wrap items-center sm:shrink-0">
               {isAgencyOwner && <Button variant="default" size="sm" className="rounded-full" onClick={() => navigate('/agency-dashboard')}><LayoutDashboard className="w-4 h-4 mr-2" />Dashboard</Button>}
               {!isAgencyOwner && <>
                 <button onClick={() => setSaved(v => !v)} className={`w-9 h-9 rounded-full border flex items-center justify-center transition-colors ${saved ? 'bg-primary/10 border-primary/30 text-primary' : 'border-border text-muted-foreground hover:text-foreground'}`}>{saved ? <BookmarkCheck className="w-4 h-4" /> : <Bookmark className="w-4 h-4" />}</button>
                 <button onClick={handleShare} className="w-9 h-9 rounded-full border border-border flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors relative"><Share2 className="w-4 h-4" />{shareMsg && <span className="absolute -top-7 left-1/2 -translate-x-1/2 bg-foreground text-background text-[10px] px-2 py-0.5 rounded whitespace-nowrap">{shareMsg}</span>}</button>
                 <button onClick={() => setShowReport(true)} className="w-9 h-9 rounded-full border border-border flex items-center justify-center text-muted-foreground hover:text-destructive hover:border-destructive/30 transition-colors"><Flag className="w-4 h-4" /></button>
                 <Button variant="outline" className="rounded-full" onClick={handleChat} disabled={chatLoading}>{chatLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <MessageCircle className="w-4 h-4 mr-2" />}{chatLoading ? 'Opening...' : 'Chat'}</Button>
+                {chatError && <p className="basis-full text-xs text-destructive">{chatError}</p>}
               </>}
             </div>
           </div>
@@ -867,7 +765,7 @@ export default function AgencyDetail() {
               {packages.map(pkg => {
                 const pkgBookings = bookingsByPkg[pkg.id] || [];
                 const maxPax = pkg.max_pax;
-                const todayStr = new Date().toISOString().split('T')[0];
+                const todayStr = localToday();
                 const futurePkgDates = (pkg.available_dates || []).filter(d => d >= todayStr).sort();
                 const nextDate = futurePkgDates[0] || null;
                 const bookedOnNextDate = nextDate ? countBookedPax(pkgBookings, nextDate) : 0;
@@ -1148,7 +1046,7 @@ export default function AgencyDetail() {
                               <div className="flex items-center gap-2">
                                 <span className={`w-2 h-2 rounded-full shrink-0 ${full ? 'bg-red-500' : slots !== null && slots <= 2 ? 'bg-amber-400' : 'bg-emerald-500'}`} />
                                 <span>{new Date(d + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'short', year: 'numeric', month: 'long', day: 'numeric' })}</span>
-                                {bookingPkg?.max_pax && <span className={`text-[10px] font-semibold ml-auto ${full ? 'text-red-600' : slots <= 2 ? 'text-amber-600' : 'text-emerald-600'}`}>{full ? 'FULL' : `${slots} left`}</span>}
+                                {Number(bookingPkg?.max_pax) > 0 && <span className={`text-[10px] font-semibold ml-auto ${full ? 'text-red-600' : slots <= 2 ? 'text-amber-600' : 'text-emerald-600'}`}>{full ? 'FULL' : `${slots} left`}</span>}
                               </div>
                             </SelectItem>
                           );
@@ -1197,7 +1095,7 @@ export default function AgencyDetail() {
               <div>
                 <Label>Number of Participants</Label>
                 <Input type="number" min={1} max={bookingPkg?.max_pax || 99} value={bookForm.num_pax} onChange={e => setBookForm(p => ({ ...p, num_pax: Math.max(1, Math.min(Number(e.target.value), bookingPkg?.max_pax || 99)) }))} />
-                {bookingPkg?.max_pax && <p className="text-xs text-muted-foreground mt-1">Max {bookingPkg.max_pax} participants</p>}
+                {Number(bookingPkg?.max_pax) > 0 && <p className="text-xs text-muted-foreground mt-1">Max {bookingPkg.max_pax} participants</p>}
               </div>
 
               {pickupLocations.length > 0 && (

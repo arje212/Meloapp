@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
+import { isCommissionConfirmed } from '@/lib/commission';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -17,13 +18,13 @@ export default function AdminAgencies() {
 
   const { data: agencies = [], isLoading } = useQuery({
     queryKey: ['admin-agencies'],
-    queryFn: () => base44.entities.Agency.list('-created_date'),
+    queryFn: () => base44.entities.Agency.list('-created_date', 1000),
   });
 
   // Fetch all completed bookings to compute per-agency commission status
   const { data: bookings = [] } = useQuery({
     queryKey: ['admin-bookings'],
-    queryFn: () => base44.entities.Booking.list('-created_date'),
+    queryFn: () => base44.entities.Booking.list('-created_date', 1000),
   });
 
   const handleStatus = async (id, status) => {
@@ -38,7 +39,7 @@ export default function AdminAgencies() {
 
   // Per-agency: count pending (unpaid) commissions on completed bookings
   const pendingCommissionMap = bookings.reduce((acc, b) => {
-    if (b.status === 'completed' && !b.commission_confirmed) {
+    if (b.status === 'completed' && !isCommissionConfirmed(b)) {
       acc[b.agency_id] = (acc[b.agency_id] || 0) + 1;
     }
     return acc;

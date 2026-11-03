@@ -1,0 +1,80 @@
+backup_script
+"drop policy if exists ""Insert achievements"" on public.achievements; create policy ""Insert achievements"" on public.achievements as permissive for insert to public with check (true);
+drop policy if exists ""Public read achievements"" on public.achievements; create policy ""Public read achievements"" on public.achievements as permissive for select to public using (true);
+drop policy if exists ""Delete own agency"" on public.agencies; create policy ""Delete own agency"" on public.agencies as permissive for delete to public using (true);
+drop policy if exists ""Enable all for authenticated users"" on public.agencies; create policy ""Enable all for authenticated users"" on public.agencies as permissive for all to public using (true) with check (true);
+drop policy if exists ""Insert agencies"" on public.agencies; create policy ""Insert agencies"" on public.agencies as permissive for insert to public with check (true);
+drop policy if exists ""Public read agencies"" on public.agencies; create policy ""Public read agencies"" on public.agencies as permissive for select to public using (true);
+drop policy if exists ""Update agencies"" on public.agencies; create policy ""Update agencies"" on public.agencies as permissive for update to public using (true);
+drop policy if exists ""Enable all for authenticated users"" on public.agency_subscriptions; create policy ""Enable all for authenticated users"" on public.agency_subscriptions as permissive for all to public using (true) with check (true);
+drop policy if exists ""Insert subs"" on public.agency_subscriptions; create policy ""Insert subs"" on public.agency_subscriptions as permissive for insert to public with check (true);
+drop policy if exists ""My subs"" on public.agency_subscriptions; create policy ""My subs"" on public.agency_subscriptions as permissive for select to public using (true);
+drop policy if exists ""Insert bookings"" on public.bookings; create policy ""Insert bookings"" on public.bookings as permissive for insert to public with check (true);
+drop policy if exists ""My bookings"" on public.bookings; create policy ""My bookings"" on public.bookings as permissive for select to public using (true);
+drop policy if exists ""Update own booking"" on public.bookings; create policy ""Update own booking"" on public.bookings as permissive for update to public using (true);
+drop policy if exists ""Chat messages access"" on public.chat_messages; create policy ""Chat messages access"" on public.chat_messages as permissive for select to public using (true);
+drop policy if exists ""Insert messages"" on public.chat_messages; create policy ""Insert messages"" on public.chat_messages as permissive for insert to public with check (true);
+drop policy if exists ""Update messages"" on public.chat_messages; create policy ""Update messages"" on public.chat_messages as permissive for update to public using (true);
+drop policy if exists ""Chat rooms access"" on public.chat_rooms; create policy ""Chat rooms access"" on public.chat_rooms as permissive for select to public using (true);
+drop policy if exists ""Insert chat rooms"" on public.chat_rooms; create policy ""Insert chat rooms"" on public.chat_rooms as permissive for insert to public with check (true);
+drop policy if exists ""Update chat rooms"" on public.chat_rooms; create policy ""Update chat rooms"" on public.chat_rooms as permissive for update to public using (true);
+drop policy if exists ""Insert follows"" on public.follows; create policy ""Insert follows"" on public.follows as permissive for insert to public with check (true);
+drop policy if exists ""Public read follows"" on public.follows; create policy ""Public read follows"" on public.follows as permissive for select to public using (true);
+drop policy if exists ""Admin can delete mountains"" on public.mountains; create policy ""Admin can delete mountains"" on public.mountains as permissive for delete to authenticated using ((EXISTS ( SELECT 1
+   FROM profiles
+  WHERE ((profiles.id = auth.uid()) AND (profiles.role = 'admin'::text)))));
+drop policy if exists ""Admin can insert mountains"" on public.mountains; create policy ""Admin can insert mountains"" on public.mountains as permissive for insert to authenticated with check ((EXISTS ( SELECT 1
+   FROM profiles
+  WHERE ((profiles.id = auth.uid()) AND (profiles.role = 'admin'::text)))));
+drop policy if exists ""Admin can update mountains"" on public.mountains; create policy ""Admin can update mountains"" on public.mountains as permissive for update to authenticated using ((EXISTS ( SELECT 1
+   FROM profiles
+  WHERE ((profiles.id = auth.uid()) AND (profiles.role = 'admin'::text)))));
+drop policy if exists ""Public mountains"" on public.mountains; create policy ""Public mountains"" on public.mountains as permissive for select to public using (true);
+drop policy if exists ""Insert notifications"" on public.notifications; create policy ""Insert notifications"" on public.notifications as permissive for insert to public with check (true);
+drop policy if exists ""My notifications"" on public.notifications; create policy ""My notifications"" on public.notifications as permissive for select to public using (true);
+drop policy if exists ""Update notifications"" on public.notifications; create policy ""Update notifications"" on public.notifications as permissive for update to public using (true);
+drop policy if exists ""Public posts"" on public.posts; create policy ""Public posts"" on public.posts as permissive for select to public using (true);
+drop policy if exists ""Users can insert posts"" on public.posts; create policy ""Users can insert posts"" on public.posts as permissive for insert to public with check ((auth.uid() = author_id));
+drop policy if exists ""Anyone can read profiles"" on public.profiles; create policy ""Anyone can read profiles"" on public.profiles as permissive for select to public using (true);
+drop policy if exists ""Public profiles are viewable by everyone"" on public.profiles; create policy ""Public profiles are viewable by everyone"" on public.profiles as permissive for select to public using (true);
+drop policy if exists ""Users can insert own profile"" on public.profiles; create policy ""Users can insert own profile"" on public.profiles as permissive for insert to public with check (true);
+drop policy if exists ""Users can update own profile"" on public.profiles; create policy ""Users can update own profile"" on public.profiles as permissive for update to public using ((auth.uid() = id));
+drop policy if exists ""Users can update own profile2"" on public.profiles; create policy ""Users can update own profile2"" on public.profiles as permissive for update to public using (true);
+drop policy if exists ""Delete roadmaps"" on public.roadmaps; create policy ""Delete roadmaps"" on public.roadmaps as permissive for delete to public using ((auth.uid() = user_id));
+drop policy if exists ""Insert roadmaps"" on public.roadmaps; create policy ""Insert roadmaps"" on public.roadmaps as permissive for insert to public with check (true);
+drop policy if exists ""Public roadmaps"" on public.roadmaps; create policy ""Public roadmaps"" on public.roadmaps as permissive for select to public using (((is_public = true) OR (auth.uid() = user_id)));
+drop policy if exists ""Update roadmaps"" on public.roadmaps; create policy ""Update roadmaps"" on public.roadmaps as permissive for update to public using ((auth.uid() = user_id));
+drop policy if exists ""Delete packages"" on public.tour_packages; create policy ""Delete packages"" on public.tour_packages as permissive for delete to public using (true);
+drop policy if exists ""Insert packages"" on public.tour_packages; create policy ""Insert packages"" on public.tour_packages as permissive for insert to public with check (true);
+drop policy if exists ""Public read packages"" on public.tour_packages; create policy ""Public read packages"" on public.tour_packages as permissive for select to public using (true);
+drop policy if exists ""Update packages"" on public.tour_packages; create policy ""Update packages"" on public.tour_packages as permissive for update to public using (true);
+drop policy if exists ""Anyone can read announcements"" on public.trip_announcements; create policy ""Anyone can read announcements"" on public.trip_announcements as permissive for select to public using (true);
+drop policy if exists ""Authenticated can delete"" on public.trip_announcements; create policy ""Authenticated can delete"" on public.trip_announcements as permissive for delete to public using ((auth.role() = 'authenticated'::text));
+drop policy if exists ""Authenticated can insert"" on public.trip_announcements; create policy ""Authenticated can insert"" on public.trip_announcements as permissive for insert to public with check ((auth.role() = 'authenticated'::text));
+drop policy if exists ""Users manage own checklist"" on public.trip_checklist_items; create policy ""Users manage own checklist"" on public.trip_checklist_items as permissive for all to public using ((user_email = (auth.jwt() ->> 'email'::text))) with check ((user_email = (auth.jwt() ->> 'email'::text)));
+drop policy if exists ""Anyone can read emergency contacts"" on public.trip_emergency_contacts; create policy ""Anyone can read emergency contacts"" on public.trip_emergency_contacts as permissive for select to public using (true);
+drop policy if exists ""Authenticated can insert contact"" on public.trip_emergency_contacts; create policy ""Authenticated can insert contact"" on public.trip_emergency_contacts as permissive for insert to public with check ((auth.role() = 'authenticated'::text));
+drop policy if exists ""Owner can update contact"" on public.trip_emergency_contacts; create policy ""Owner can update contact"" on public.trip_emergency_contacts as permissive for update to public using ((user_email = (auth.jwt() ->> 'email'::text)));
+drop policy if exists ""Anyone can read trip expenses"" on public.trip_expenses; create policy ""Anyone can read trip expenses"" on public.trip_expenses as permissive for select to public using (true);
+drop policy if exists ""Authenticated can delete"" on public.trip_expenses; create policy ""Authenticated can delete"" on public.trip_expenses as permissive for delete to public using ((auth.role() = 'authenticated'::text));
+drop policy if exists ""Authenticated can insert"" on public.trip_expenses; create policy ""Authenticated can insert"" on public.trip_expenses as permissive for insert to public with check ((auth.role() = 'authenticated'::text));
+drop policy if exists ""Auth users can insert trip members"" on public.trip_members; create policy ""Auth users can insert trip members"" on public.trip_members as permissive for insert to authenticated with check ((auth.uid() IS NOT NULL));
+drop policy if exists ""Auth users can update trip members"" on public.trip_members; create policy ""Auth users can update trip members"" on public.trip_members as permissive for update to authenticated using ((auth.uid() IS NOT NULL));
+drop policy if exists ""Insert members"" on public.trip_members; create policy ""Insert members"" on public.trip_members as permissive for insert to public with check (true);
+drop policy if exists ""Public read trips members"" on public.trip_members; create policy ""Public read trips members"" on public.trip_members as permissive for select to public using (true);
+drop policy if exists ""Update members"" on public.trip_members; create policy ""Update members"" on public.trip_members as permissive for update to public using (true);
+drop policy if exists trip_payments_insert on public.trip_payments; create policy trip_payments_insert on public.trip_payments as permissive for insert to public with check ((auth.email() = user_email));
+drop policy if exists trip_payments_select on public.trip_payments; create policy trip_payments_select on public.trip_payments as permissive for select to public using ((auth.role() = 'authenticated'::text));
+drop policy if exists trip_payments_update on public.trip_payments; create policy trip_payments_update on public.trip_payments as permissive for update to public using ((auth.role() = 'authenticated'::text));
+drop policy if exists ""Anyone can read trip photos"" on public.trip_photos; create policy ""Anyone can read trip photos"" on public.trip_photos as permissive for select to public using (true);
+drop policy if exists ""Authenticated can insert photos"" on public.trip_photos; create policy ""Authenticated can insert photos"" on public.trip_photos as permissive for insert to public with check ((auth.role() = 'authenticated'::text));
+drop policy if exists ""Owner can delete photo"" on public.trip_photos; create policy ""Owner can delete photo"" on public.trip_photos as permissive for delete to public using ((uploader_email = (auth.jwt() ->> 'email'::text)));
+drop policy if exists ""Insert reviews"" on public.trip_reviews; create policy ""Insert reviews"" on public.trip_reviews as permissive for insert to public with check (true);
+drop policy if exists ""Public read reviews"" on public.trip_reviews; create policy ""Public read reviews"" on public.trip_reviews as permissive for select to public using (true);
+drop policy if exists ""Auth users can insert trips"" on public.trips; create policy ""Auth users can insert trips"" on public.trips as permissive for insert to authenticated with check ((auth.uid() IS NOT NULL));
+drop policy if exists ""Auth users can update own trips"" on public.trips; create policy ""Auth users can update own trips"" on public.trips as permissive for update to authenticated using ((auth.uid() IS NOT NULL));
+drop policy if exists ""Public trips"" on public.trips; create policy ""Public trips"" on public.trips as permissive for select to public using (true);
+drop policy if exists ""Users can insert trips"" on public.trips; create policy ""Users can insert trips"" on public.trips as permissive for insert to public with check ((auth.uid() = organizer_id));
+drop policy if exists ""Public can read files"" on storage.objects; create policy ""Public can read files"" on storage.objects as permissive for select to public using ((bucket_id = 'files'::text));
+drop policy if exists ""Public can upload files"" on storage.objects; create policy ""Public can upload files"" on storage.objects as permissive for insert to authenticated with check ((bucket_id = 'files'::text));
+drop policy if exists ""Public read access"" on storage.objects; create policy ""Public read access"" on storage.objects as permissive for select to public using ((bucket_id = 'files'::text));"

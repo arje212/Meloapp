@@ -20,15 +20,7 @@ VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 
 Run the app: `npm run dev`
 
-**Publish your changes**
 
-Open [Base44.com](http://Base44.com) and click on Publish.
-
-**Docs & Support**
-
-Documentation: [https://docs.base44.com/Integrations/Using-GitHub](https://docs.base44.com/Integrations/Using-GitHub)
-
-Support: [https://app.base44.com/support](https://app.base44.com/support)
 
 Do not commit database, Supabase, EAS, or Expo credentials. Keep secrets in local environment files only.
 
@@ -53,3 +45,5 @@ npx cap open android
 #    - Build → Generate Signed Bundle / APK → release
 
 update sa vercel command: npm run build; vercel --prod
+
+android studio password =  Bhudzray@91 - Bhudzray@90

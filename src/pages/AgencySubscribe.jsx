@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { useAuth } from '@/lib/AuthContext';
@@ -7,6 +8,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { CheckCircle2, Loader2, Upload, CreditCard, Zap, Star, Crown, Gift } from 'lucide-react';
+import { pickActiveSubscription, isSubscriptionExpired, daysUntil } from '@/lib/plans';
+import { uploadFile } from '@/lib/uploadFile';
 
 const PLANS = [
   {
@@ -35,7 +38,7 @@ const PLANS = [
     features: [
       'Up to 5 tour packages',
       'Better visibility',
-      'Featured on explore page',
+      'Priority listing on the Agencies page',
       '7% platform commission',
     ],
   },
@@ -49,8 +52,8 @@ const PLANS = [
     commission: 5,
     features: [
       'Unlimited tour packages',
-      'Priority visibility',
-      'Featured on homepage',
+      'Higher priority listing',
+      'Featured on the homepage',
       'Analytics dashboard',
       '5% platform commission',
     ],
@@ -66,8 +69,8 @@ const PLANS = [
     commission: 3,
     features: [
       'Unlimited tour packages',
-      'Top priority visibility',
-      'Featured agency badge',
+      'Top priority listing',
+      'Featured Agency badge + homepage spot',
       'Analytics dashboard',
       '3% platform commission',
       'Save ~25% vs monthly',
@@ -76,6 +79,7 @@ const PLANS = [
 ];
 
 export default function AgencySubscribe() {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const qc = useQueryClient();
   const [selectedPlan, setSelectedPlan] = useState('pro');
@@ -83,6 +87,7 @@ export default function AgencySubscribe() {
   const [proofUrl, setProofUrl] = useState('');
   const [uploading, setUploading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [uploadError, setUploadError] = useState('');
 
   const { data: myAgencies = [] } = useQuery({
     queryKey: ['my-agency', user?.email],
@@ -107,15 +112,33 @@ export default function AgencySubscribe() {
   const handleUploadProof = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    if (!file.type.startsWith('image/')) { setUploadError('Please choose an image (JPG, PNG).'); return; }
+    if (file.size > 5 * 1024 * 1024) { setUploadError('Max file size is 5MB.'); return; }
+    setUploadError('');
     setUploading(true);
-    const { file_url } = await base44.integrations.Core.UploadFile({ file });
-    setProofUrl(file_url);
-    setUploading(false);
+    try {
+      const url = await uploadFile(file, 'subscription-proofs');
+      setProofUrl(url);
+    } catch (err) {
+      console.error('Proof upload failed:', err);
+      setUploadError('Upload failed. Please try again.');
+    } finally {
+      setUploading(false);
+    }
   };
 
   const agency = myAgencies[0];
   const plan = PLANS.find(p => p.key === selectedPlan);
-  const activeSub = mySubs.find(s => s.status === 'verified');
+  const currentSub = pickActiveSubscription(mySubs);
+  // Only a PAID verified plan blocks this page; a verified Free plan can still upgrade.
+  const activeSub = currentSub && currentSub.plan !== 'free' ? currentSub : null;
+  const daysLeft = activeSub?.end_date ? daysUntil(activeSub.end_date) : null;
+  // Paid plans last 1 year; renewal opens 30 days before the end date (and after expiry).
+  const canRenew = !!activeSub && daysLeft != null && daysLeft <= 30;
+  // While a paid plan is still running, renewing into a cheaper plan would downgrade it immediately.
+  const isDowngrade = canRenew && (plan?.price ?? 0) < (PLANS.find(p => p.key === activeSub.plan)?.price ?? 0);
+  const expiredSub = !activeSub ? mySubs.find(s => s.status === 'verified' && s.plan !== 'free' && isSubscriptionExpired(s)) : null;
+  const hasFreePlan = currentSub?.plan === 'free';
   const pendingSub = mySubs.find(s => s.status === 'pending');
   const isPaidPlan = selectedPlan !== 'free';
 
@@ -123,12 +146,12 @@ export default function AgencySubscribe() {
     return (
       <div className="max-w-lg mx-auto px-4 py-12 text-center">
         <p className="text-muted-foreground">You need to register an agency first.</p>
-        <Button className="mt-4 rounded-full" onClick={() => window.location.href = '/agency-register'}>Register Agency</Button>
+        <Button className="mt-4 rounded-full" onClick={() => navigate('/agency-register')}>Register Agency</Button>
       </div>
     );
   }
 
-  if (activeSub) {
+  if (activeSub && !canRenew) {
     return (
       <div className="max-w-lg mx-auto px-4 py-12 text-center">
         <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
@@ -137,7 +160,7 @@ export default function AgencySubscribe() {
         <h2 className="font-display text-2xl font-bold mb-2">Subscription Active</h2>
         <Badge className="bg-green-100 text-green-700 border-0 text-sm capitalize">{activeSub.plan} Plan</Badge>
         <p className="text-sm text-muted-foreground mt-3">Valid until: <strong>{activeSub.end_date || 'N/A'}</strong></p>
-        <Button variant="outline" className="mt-4 rounded-full" onClick={() => window.location.href = '/agency-dashboard'}>
+        <Button variant="outline" className="mt-4 rounded-full" onClick={() => navigate('/agency-dashboard')}>
           Go to Dashboard
         </Button>
       </div>
@@ -162,6 +185,18 @@ export default function AgencySubscribe() {
         <h1 className="font-display text-2xl font-bold">Choose a Plan</h1>
         <p className="text-sm text-muted-foreground mt-1">Unlock premium features for {agency.name}</p>
       </div>
+      {expiredSub && (
+        <div className="mb-6 rounded-xl border border-yellow-300 bg-yellow-50 p-3 text-sm text-yellow-800">
+          Your <strong className="capitalize">{expiredSub.plan}</strong> plan expired on <strong>{expiredSub.end_date}</strong>.
+          You are on the Free plan until you renew.
+        </div>
+      )}
+      {canRenew && (
+        <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+          Your <strong className="capitalize">{activeSub.plan}</strong> plan ends on <strong>{activeSub.end_date}</strong> ({Math.max(0, daysLeft)} day(s) left).
+          Renewing now adds 1 year after that date.
+        </div>
+      )}
 
       {/* Plans grid */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-8">
@@ -239,10 +274,10 @@ export default function AgencySubscribe() {
               amount: 0,
               status: 'verified', // free plan auto-verified
             })}
-            disabled={submitMutation.isPending}
+            disabled={submitMutation.isPending || hasFreePlan || !!activeSub}
           >
             {submitMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Gift className="w-4 h-4 mr-2" />}
-            Activate Free Plan
+            {activeSub ? 'Included until your paid plan ends' : hasFreePlan ? 'Free Plan Active' : 'Activate Free Plan'}
           </Button>
           <p className="text-xs text-muted-foreground">You can upgrade anytime to reduce your commission rate.</p>
         </div>
@@ -279,6 +314,7 @@ export default function AgencySubscribe() {
               </span>
               <input type="file" accept="image/*" className="hidden" onChange={handleUploadProof} />
             </label>
+            {uploadError && <p className="mt-2 text-xs text-destructive">{uploadError}</p>}
             {uploading && (
               <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
                 <Loader2 className="w-3 h-3 animate-spin" /> Uploading...
@@ -288,7 +324,7 @@ export default function AgencySubscribe() {
 
           <Button
             className="w-full rounded-full"
-            disabled={!gcashRef || !proofUrl || submitMutation.isPending}
+            disabled={!gcashRef || !proofUrl || submitMutation.isPending || isDowngrade}
             onClick={() => submitMutation.mutate({
               agency_id: agency.id,
               agency_name: agency.name,
@@ -300,7 +336,7 @@ export default function AgencySubscribe() {
             })}
           >
             {submitMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-            Submit Payment for Review
+            {isDowngrade ? 'Choose your current plan or higher to renew' : 'Submit Payment for Review'}
           </Button>
         </div>
       )}

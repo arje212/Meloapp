@@ -19,6 +19,9 @@ export const base44 = {
     TripReview: API.TripReviews,
     Roadmap: API.Roadmaps,
     AgencySubscription: API.AgencySubscriptions,
+    AgencyReview: API.AgencyReviews,
+    AgencyReport: API.AgencyReports,
+    AgencyBanner: API.AgencyBanners,
     User: API.Profiles,
   },
   auth: {
@@ -27,14 +30,16 @@ export const base44 = {
     updateMe: async (updates) => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      await supabase.from('profiles').update(updates).eq('id', user.id);
+      const { error } = await supabase.from('profiles').update(updates).eq('id', user.id);
+      if (error) throw error;
     },
   },
   integrations: {
     Core: {
       UploadFile: async ({ file }) => {
-        const path = `uploads/${Date.now()}_${file.name}`;
-        const { error } = await supabase.storage.from('files').upload(path, file);
+        const ext = (file.name.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 8) || 'bin';
+        const path = `uploads/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+        const { error } = await supabase.storage.from('files').upload(path, file, { contentType: file.type });
         if (error) throw error;
         const { data } = supabase.storage.from('files').getPublicUrl(path);
         return { file_url: data.publicUrl };

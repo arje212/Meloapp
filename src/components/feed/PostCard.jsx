@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Heart, MessageCircle, Share2, MapPin, ChevronLeft, ChevronRight,
   Play, Pause, Volume2, VolumeX,
@@ -10,6 +11,8 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/AuthContext';
 import { Link, useNavigate } from 'react-router-dom';
+import { syncLikesCount } from '@/lib/postCounts';
+import { notifyUser } from '@/lib/notify';
 import { formatDistanceToNow } from 'date-fns';
 import FollowButton from '@/components/social/FollowButton';
 import TripPostCard from '@/components/trips/TripPostCard';
@@ -139,7 +142,7 @@ function PackagePromoCard({ post }) {
                 <Mountain className="w-3 h-3" />{mountain_name}
               </span>
             )}
-            {package_price && (
+            {Number(package_price) > 0 && (
               <span className="text-xs font-semibold text-primary">
                 ₱{Number(package_price).toLocaleString()} / pax
               </span>
@@ -392,62 +395,162 @@ function ShareMenu({ postId, onClose }) {
 }
 
 // ── More Menu ─────────────────────────────────────────────────────────────────
-function MoreMenu({ onClose }) {
+function MoreMenu({ post, user, onClose }) {
+  const queryClient = useQueryClient();
+  const [view, setView] = useState('main');   // 'main' | 'report'
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  const savedKey = ['saved-post-ids', user?.id];
+  const { data: savedIds = [] } = useQuery({
+    queryKey: savedKey,
+    enabled: !!user?.id,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('saved_posts').select('post_id').eq('user_id', user.id).limit(1000);
+      if (error) throw error;
+      return (data || []).map((r) => r.post_id);
+    },
+  });
+  const isSaved = savedIds.includes(post.id);
+  const isMine = !!user?.id && post.author_id === user.id;
+  const finish = (text) => { setMsg(text); setTimeout(onClose, 1400); };
+
+  const toggleSave = async () => {
+    if (busy || !user?.id) return;
+    setBusy(true);
+    try {
+      const r = isSaved
+        ? await supabase.from('saved_posts').delete().eq('user_id', user.id).eq('post_id', post.id)
+        : await supabase.from('saved_posts').insert({ user_id: user.id, post_id: post.id });
+      if (r.error && r.error.code !== '23505') throw r.error;
+      queryClient.setQueryData(savedKey, (ids = []) => (isSaved ? ids.filter((i) => i !== post.id) : [...new Set([...ids, post.id])]));
+      queryClient.invalidateQueries({ queryKey: ['saved-posts', user.id] });
+      finish(isSaved ? 'Removed from saved' : 'Saved. Find it in Profile > Saved');
+    } catch (err) {
+      console.error('Save post failed:', err);
+      setMsg('Could not save this post. Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const report = async (reason) => {
+    if (busy || !user?.email) return;
+    setBusy(true);
+    try {
+      const r = await supabase.from('post_reports').insert({ post_id: post.id, reported_by: user.email, reason });
+      if (r.error?.code === '23505') { finish('You already reported this post'); return; }
+      if (r.error) throw r.error;
+      finish('Thanks. We will review this post.');
+    } catch (err) {
+      console.error('Report post failed:', err);
+      setMsg('Could not send the report. Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const item = 'w-full flex items-center gap-3 px-3 py-2.5 hover:bg-muted transition-colors text-sm text-left disabled:opacity-60';
   return (
-    <div className="absolute top-full right-0 mt-1 bg-card border shadow-xl rounded-2xl overflow-hidden z-50 w-48 animate-in slide-in-from-top-2 duration-150">
-      <button className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-muted transition-colors text-sm">
-        <Bookmark className="w-4 h-4 text-muted-foreground" /> Save post
-      </button>
-      <button className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-muted transition-colors text-sm text-destructive">
-        <Flag className="w-4 h-4" /> Report post
-      </button>
+    <div onClick={(e) => e.stopPropagation()} className="absolute top-full right-0 mt-1 bg-card border shadow-xl rounded-2xl overflow-hidden z-50 w-56 animate-in slide-in-from-top-2 duration-150">
+      {msg ? (
+        <p className="px-3 py-3 text-sm">{msg}</p>
+      ) : view === 'report' ? (
+        <>
+          <p className="px-3 pt-2.5 pb-1 text-xs text-muted-foreground">Why are you reporting this post?</p>
+          {['Spam', 'Inappropriate content', 'Misleading or false information', 'Other'].map((reason) => (
+            <button key={reason} type="button" disabled={busy} onClick={() => report(reason)} className={item}>{reason}</button>
+          ))}
+          <button type="button" onClick={() => setView('main')} className={`${item} text-muted-foreground`}>Back</button>
+        </>
+      ) : (
+        <>
+          <button type="button" disabled={busy} onClick={toggleSave} className={item}>
+            <Bookmark className={`w-4 h-4 ${isSaved ? 'fill-primary text-primary' : 'text-muted-foreground'}`} /> {isSaved ? 'Unsave post' : 'Save post'}
+          </button>
+          {!isMine && (
+            <button type="button" onClick={() => setView('report')} className={`${item} text-destructive`}>
+              <Flag className="w-4 h-4" /> Report post
+            </button>
+          )}
+        </>
+      )}
     </div>
   );
 }
 
 // ─── Post Card ─────────────────────────────────────────────────────────────────
-export default function PostCard({ post, onComment, onUpdate }) {
+export default function PostCard({ post, onComment }) {
   const { user } = useAuth();
 
-  // ── Persistent like state ──────────────────────────────────────────────────
-  const [liked, setLiked] = useState(false);
+  // -- Persistent like state ---------------------------------------------
+  // The set of posts I liked is cached once for the whole feed (not one query per card), so the
+  // heart survives re-renders, refetches and tab switches. Fixes: a like that "disappeared" after the
+  // feed refreshed. supabase-js does NOT throw on a rejected write, so errors are now checked.
+  const queryClient = useQueryClient();
+  const likesKey = ['my-likes', user?.id];
+  const { data: myLikes, isFetched: likesReady } = useQuery({
+    queryKey: likesKey,
+    enabled: !!user?.id,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('post_likes').select('post_id').eq('user_id', user.id).limit(1000);
+      if (error) throw error;
+      return (data || []).map((r) => r.post_id);
+    },
+  });
+  const liked = !!myLikes?.includes(post.id);
   const [likesCount, setLikesCount] = useState(post.likes_count || 0);
   const [likeLoading, setLikeLoading] = useState(false);
-  const [likeChecked, setLikeChecked] = useState(false);
+  const [likeError, setLikeError] = useState('');
 
-  useEffect(() => {
-    if (!user?.id || !post?.id) return;
-    let cancelled = false;
-    supabase
-      .from('post_likes')
-      .select('id')
-      .eq('post_id', post.id)
-      .eq('user_id', user.id)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (!cancelled) { setLiked(!!data); setLikeChecked(true); }
-      });
-    return () => { cancelled = true; };
-  }, [post.id, user?.id]);
+  // keep the counter in sync when the feed delivers a fresh count from the database
+  useEffect(() => { setLikesCount(post.likes_count || 0); }, [post.likes_count]);
+
+  const setLikedCache = (on) =>
+    queryClient.setQueryData(likesKey, (ids = []) => (on ? [...new Set([...ids, post.id])] : ids.filter((id) => id !== post.id)));
 
   const handleHeart = async () => {
     if (likeLoading || !user?.id) return;
     setLikeLoading(true);
+    setLikeError('');
     const wasLiked = liked;
     const delta = wasLiked ? -1 : 1;
-    setLiked(!wasLiked);
+    setLikedCache(!wasLiked);
     setLikesCount(c => Math.max(0, c + delta));
     try {
+      let result;
       if (wasLiked) {
-        await supabase.from('post_likes').delete().eq('post_id', post.id).eq('user_id', user.id);
+        result = await supabase.from('post_likes').delete().eq('post_id', post.id).eq('user_id', user.id);
       } else {
-        await supabase.from('post_likes').upsert({ post_id: post.id, user_id: user.id }, { onConflict: 'post_id,user_id' });
+        result = await supabase.from('post_likes').insert({ post_id: post.id, user_id: user.id });
+        if (result.error?.code === '23505') result = { error: null }; // already liked = fine
       }
-      await supabase.from('posts').update({ likes_count: Math.max(0, (post.likes_count || 0) + delta) }).eq('id', post.id);
-      onUpdate?.();
-    } catch {
-      setLiked(wasLiked);
+      if (result.error) throw result.error;
+      const fresh = await syncLikesCount(post.id);
+      if (fresh != null) setLikesCount(fresh);
+      if (!wasLiked) {
+        notifyUser({
+          toEmail: post.profiles?.email,
+          fromEmail: user.email,
+          title: 'New like on your post',
+          message: `${user.full_name || user.email} liked your post.`,
+          type: 'comment',
+          link: '/',
+          icon: '\u2764\uFE0F',
+        });
+      }
+      // no feed-wide refetch here: it made the whole feed reload on every like
+    } catch (err) {
+      console.error('Like failed:', err);
+      setLikedCache(wasLiked);
       setLikesCount(c => Math.max(0, c - delta));
+      // show the database's own reason so the real cause is visible (e.g. a missing policy or column)
+      const reason = err?.message ? ` (${String(err.message).slice(0, 140)})` : '';
+      setLikeError(`Hindi na-save ang like. Subukan ulit.${reason}`);
+      setTimeout(() => setLikeError(''), 9000);
     } finally {
       setLikeLoading(false);
     }
@@ -535,7 +638,7 @@ export default function PostCard({ post, onComment, onUpdate }) {
             >
               <MoreHorizontal className="w-4 h-4" />
             </button>
-            {showMore && <MoreMenu onClose={() => setShowMore(false)} />}
+            {showMore && <MoreMenu post={post} user={user} onClose={() => setShowMore(false)} />}
           </div>
         </div>
       </div>
@@ -593,12 +696,13 @@ export default function PostCard({ post, onComment, onUpdate }) {
         </div>
       )}
 
+      {likeError && <p className="px-4 pb-1 text-xs text-destructive">{likeError}</p>}
       {/* Action buttons */}
       <div className="flex items-center border-b">
         <button
           className={`flex-1 flex items-center justify-center gap-2 h-11 text-sm font-medium transition-colors hover:bg-muted ${liked ? 'text-red-500' : 'text-muted-foreground'} ${likeLoading ? 'opacity-60' : ''}`}
           onClick={e => { e.stopPropagation(); handleHeart(); }}
-          disabled={likeLoading || !likeChecked}
+          disabled={likeLoading || !likesReady}
         >
           <Heart className={`w-4 h-4 transition-all ${liked ? 'fill-red-500 scale-110' : ''}`} />
           <span>{liked ? 'Liked' : 'Like'}</span>

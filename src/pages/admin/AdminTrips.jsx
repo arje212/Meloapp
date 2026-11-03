@@ -8,7 +8,7 @@ import { format } from 'date-fns';
 export default function AdminTrips() {
   const { data: trips = [], isLoading } = useQuery({
     queryKey: ['admin-trips'],
-    queryFn: () => base44.entities.Trip.list('-created_date'),
+    queryFn: () => base44.entities.Trip.list('-created_date', 1000),
   });
 
   if (isLoading) return <div className="flex justify-center py-16"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;

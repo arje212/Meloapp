@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Loader2, Compass, Mail, Lock, Eye, EyeOff } from 'lucide-react';
 
 export default function Login() {
+  const { authError } = useAuth();
   const [tab, setTab] = useState('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -34,17 +36,20 @@ export default function Login() {
       password,
       options: { data: { full_name: fullName } }
     });
-    console.log('Signup result:', data, error);
     if (error) {
       setError(error.message);
     } else {
-      await supabase.from('profiles').upsert({
-        id: data.user.id,
-        email,
-        full_name: fullName,
-        role: 'user',
-      });
-      setSuccess('Account created! You can now sign in.');
+      // With email confirmation ON there is no session yet, so this write would be rejected;
+      // AuthContext creates the profile row on first sign-in instead.
+      if (data.session && data.user) {
+        await supabase.from('profiles').upsert({
+          id: data.user.id,
+          email,
+          full_name: fullName,
+          role: 'user',
+        });
+      }
+      setSuccess(data.session ? 'Account created! You can now sign in.' : 'Account created! Check your email to confirm, then sign in.');
       setTab('login');
     }
     setLoading(false);
@@ -131,8 +136,8 @@ export default function Login() {
               </div>
             </div>
 
-            {error && (
-              <p className="text-xs text-destructive bg-destructive/10 rounded-lg px-3 py-2">{error}</p>
+            {(error || authError?.message) && (
+              <p className="text-xs text-destructive bg-destructive/10 rounded-lg px-3 py-2">{error || authError.message}</p>
             )}
             {success && (
               <p className="text-xs text-green-700 bg-green-50 rounded-lg px-3 py-2">{success}</p>

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { todayStr } from '@/lib/plans';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
@@ -156,7 +157,7 @@ export default function CreateTrip() {
         <div className="grid grid-cols-2 gap-3">
           <div>
             <Label>Start Date</Label>
-            <Input type="date" value={form.start_date} onChange={e => updateField('start_date', e.target.value)} required />
+            <Input type="date" min={todayStr()} value={form.start_date} onChange={e => updateField('start_date', e.target.value)} required />
           </div>
           <div>
             <Label>End Date</Label>
