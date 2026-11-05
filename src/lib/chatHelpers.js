@@ -77,7 +77,92 @@ export function getInitials(name = '') {
   return name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '?';
 }
 
+export async function fetchProfileNamesForEmails(emails) {
+  const uniqueEmails = [...new Set(emails.filter(Boolean))];
+  if (!uniqueEmails.length) return {};
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('email, full_name')
+    .in('email', uniqueEmails);
+  if (error) throw error;
+
+  return Object.fromEntries(
+    (data || []).filter(profile => profile.full_name).map(profile => [profile.email, profile.full_name])
+  );
+}
+
+export async function hydrateRoomParticipantNames(room) {
+  if (!room?.participants?.length) return room;
+  const existingNames = room.participant_names || [];
+  const missingNames = room.participants.filter((email, index) =>
+    !existingNames[index] || existingNames[index].toLowerCase() === email.toLowerCase()
+  );
+  const profileNames = await fetchProfileNamesForEmails(missingNames);
+
+  return {
+    ...room,
+    participant_names: room.participants.map((email, index) =>
+      profileNames[email] ||
+      (existingNames[index] && existingNames[index].toLowerCase() !== email.toLowerCase()
+        ? existingNames[index]
+        : 'Hiker')
+    ),
+  };
+}
+
 export const REACTIONS_LIST = ['❤️', '😂', '😮', '😢', '😡', '👍'];
+
+const normalizeParticipants = (participants = []) =>
+  [...new Set(participants.map(email => email?.toLowerCase()).filter(Boolean))].sort();
+
+export function findExistingGroupChat(rooms, { name, participants, bookingId, tripId }) {
+  const expectedParticipants = JSON.stringify(normalizeParticipants(participants));
+  const expectedName = name?.trim().toLowerCase();
+
+  return rooms.find(room =>
+    room.type === 'group' &&
+    ((bookingId && room.booking_id === bookingId) ||
+      (tripId && room.trip_id === tripId) ||
+      (room.name?.trim().toLowerCase() === expectedName &&
+        JSON.stringify(normalizeParticipants(room.participants)) === expectedParticipants))
+  );
+}
+
+function dedupeGroupChats(rooms) {
+  const grouped = new Map();
+  const result = [];
+
+  for (const room of rooms) {
+    if (room.type !== 'group') {
+      result.push(room);
+      continue;
+    }
+
+    const identity = room.trip_id
+      ? `trip:${room.trip_id}`
+      : room.booking_id
+        ? `booking:${room.booking_id}`
+        : `${room.name?.trim().toLowerCase()}:${JSON.stringify(normalizeParticipants(room.participants))}`;
+    const existingIndex = grouped.get(identity);
+
+    if (existingIndex === undefined) {
+      grouped.set(identity, result.length);
+      result.push(room);
+      continue;
+    }
+
+    const previous = result[existingIndex];
+    const hasUsefulMessage = value => value?.last_message && !/group chat created/i.test(value.last_message);
+    const currentIsBetter = Number(hasUsefulMessage(room)) > Number(hasUsefulMessage(previous)) ||
+      (hasUsefulMessage(room) === hasUsefulMessage(previous) &&
+        new Date(room.updated_date || room.last_message_time || 0) >
+          new Date(previous.updated_date || previous.last_message_time || 0));
+    if (currentIsBetter) result[existingIndex] = room;
+  }
+
+  return result;
+}
 
 
 /**
@@ -96,7 +181,7 @@ export async function fetchMyChatRooms(email, { withUnread = false, limit = 300 
     .limit(limit);
   if (error) throw error;
   const rooms = data || [];
-  if (!withUnread || rooms.length === 0) return rooms;
+  if (!withUnread || rooms.length === 0) return dedupeGroupChats(rooms);
 
   try {
     const { data: unreadRows } = await supabase
@@ -107,8 +192,8 @@ export async function fetchMyChatRooms(email, { withUnread = false, limit = 300 
       .in('room_id', rooms.map((r) => r.id));
     const counts = {};
     (unreadRows || []).forEach((m) => { counts[m.room_id] = (counts[m.room_id] || 0) + 1; });
-    return rooms.map((r) => ({ ...r, _unread: counts[r.id] || 0 }));
+    return dedupeGroupChats(rooms.map((r) => ({ ...r, _unread: counts[r.id] || 0 })));
   } catch {
-    return rooms;
+    return dedupeGroupChats(rooms);
   }
 }

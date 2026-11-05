@@ -1,7 +1,7 @@
 // Immersive achievement and gamification UI components
 import { useState, useEffect } from 'react';
 import { Badge, Button } from '@/components/ui/badge';
-import { Trophy, Flame, Star, Zap } from 'lucide-react';
+import { Flame, Star, Zap } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
 // ========== ACHIEVEMENT POPUP (Cinematic) ==========

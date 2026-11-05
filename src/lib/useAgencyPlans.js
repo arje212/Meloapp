@@ -17,7 +17,8 @@ export function useAgencyPlans() {
         .select('agency_id, plan, status, end_date, created_date')
         .eq('status', 'verified')
         .limit(1000);
-      if (error || !data) return {};
+      if (error) throw error;
+      if (!data) return {};
       const grouped = {};
       data.forEach((s) => { (grouped[s.agency_id] = grouped[s.agency_id] || []).push(s); });
       const out = {};

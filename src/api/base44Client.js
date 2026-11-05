@@ -30,8 +30,17 @@ export const base44 = {
     updateMe: async (updates) => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      const { error } = await supabase.from('profiles').update(updates).eq('id', user.id);
-      if (error) throw error;
+      let payload = { ...updates };
+      for (let attempt = 0; attempt < 6; attempt += 1) {
+        const { error } = await supabase.from('profiles').update(payload).eq('id', user.id);
+        if (!error) return;
+        const col = (`${error.message || ''} ${error.details || ''}`.match(/'([^']+)' column/i) || [])[1];
+        if (!col || !(col in payload)) throw error;
+        console.warn(`[profile] column "${col}" does not exist in profiles - saved without it.`);
+        const { [col]: _dropped, ...rest } = payload;
+        payload = rest;
+        if (Object.keys(payload).length === 0) return;
+      }
     },
   },
   integrations: {

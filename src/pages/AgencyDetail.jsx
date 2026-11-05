@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { fetchMyChatRooms } from '@/lib/chatHelpers';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { useAuth } from '@/lib/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -25,6 +25,7 @@ import { uploadFile } from '@/lib/uploadFile';
 import { createBooking } from '@/lib/createBooking';
 import { getCommissionRate, pickActiveSubscription, todayStr as localToday } from '@/lib/plans';
 import PlanBadge from '@/components/agencies/PlanBadge';
+import SharePackageDialog from '@/components/agencies/SharePackageDialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 
@@ -112,8 +113,8 @@ function TrustPanel({ agency, agencyPlan }) {
     { icon: Calendar, label: 'Member Since', desc: agency.created_date ? new Date(agency.created_date).toLocaleDateString('en-PH', { year: 'numeric', month: 'long' }) : 'Date unavailable', ok: !!agency.created_date },
     { icon: ThumbsUp, label: 'Completed Bookings', desc: agency.total_bookings ? `${agency.total_bookings} confirmed trips done` : 'No bookings yet', ok: (agency.total_bookings || 0) > 0 },
     { icon: FileText, label: 'Subscription Plan', desc: agencyPlan !== 'free' ? `Active ${agencyPlan.charAt(0).toUpperCase() + agencyPlan.slice(1)} plan` : 'Free tier', ok: agencyPlan !== 'free' },
-    { icon: ClipboardList, label: 'Business Registration', desc: agency.business_reg_number ? `Reg. No. ${agency.business_reg_number}` : 'Not provided', ok: !!agency.business_reg_number },
-    { icon: CheckSquare, label: 'DOLE / Permit', desc: agency.permit_number ? `Permit No. ${agency.permit_number}` : 'Not provided', ok: !!agency.permit_number },
+    { icon: ClipboardList, label: 'Business Registration', desc: agency.business_reg_number ? `Reg. No. ${agency.business_reg_number}` : agency.business_reg_document_path ? 'Document submitted for review' : 'Not provided', ok: !!(agency.business_reg_number || agency.business_reg_document_path) },
+    { icon: CheckSquare, label: 'DOLE / Permit', desc: agency.permit_number ? `Permit No. ${agency.permit_number}` : agency.permit_document_path ? 'Document submitted for review' : 'Not provided', ok: !!(agency.permit_number || agency.permit_document_path) },
   ];
   const score = trustItems.filter(t => t.ok).length;
   const scoreColor = score >= 5 ? 'text-emerald-600' : score >= 3 ? 'text-amber-600' : 'text-red-500';
@@ -202,19 +203,40 @@ function ReviewsTab({ agencyId, user }) {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const queryClient = useQueryClient();
-  const { data: reviews = [], isLoading } = useQuery({
+  const {
+    data: reviews = [],
+    isLoading: isLoadingReviews,
+    isError: reviewsLoadFailed,
+  } = useQuery({
     queryKey: ['agency-reviews', agencyId],
     queryFn: () => base44.entities.AgencyReview.filter({ agency_id: agencyId }),
     enabled: !!agencyId,
   });
+  const {
+    data: completedBookings = [],
+    isLoading: isCheckingBookings,
+    isError: bookingCheckFailed,
+  } = useQuery({
+    queryKey: ['agency-review-eligibility', agencyId, user?.email],
+    queryFn: () => base44.entities.Booking.filter({
+      agency_id: agencyId,
+      user_email: user.email,
+      status: ['completed', 'commission_sent', 'commission_confirmed'],
+    }, '-created_date', 100),
+    enabled: !!agencyId && !!user?.email,
+  });
   const [formError, setFormError] = useState('');
   const avgRating = reviews.length ? (reviews.reduce((s, r) => s + (r.rating || 0), 0) / reviews.length).toFixed(1) : null;
+  const hasCompletedBooking = completedBookings.length > 0;
+  const hasReviewed = reviews.some(review =>
+    String(review.user_email || '').toLowerCase() === String(user?.email || '').toLowerCase()
+  );
   const handleSubmit = async () => {
-    if (!rating) return;
+    if (!rating || !hasCompletedBooking || hasReviewed || isLoadingReviews || reviewsLoadFailed || bookingCheckFailed) return;
     setSubmitting(true); setFormError('');
     try {
     await base44.entities.AgencyReview.create({ agency_id: agencyId, user_email: user.email, user_name: user.full_name || user.email, rating, comment, created_date: new Date().toISOString() });
-    queryClient.invalidateQueries(['agency-reviews', agencyId]);
+    queryClient.invalidateQueries({ queryKey: ['agency-reviews', agencyId] });
     setSubmitted(true); setShowForm(false); setRating(0); setComment('');
     } catch (err) {
       console.error('Review failed:', err);
@@ -230,7 +252,11 @@ function ReviewsTab({ agencyId, user }) {
           <div className="flex-1 space-y-1">{distrib.map(({ n, count }) => (<div key={n} className="flex items-center gap-2"><span className="text-xs text-muted-foreground w-3">{n}</span><Star className="w-3 h-3 text-yellow-400 fill-yellow-400 shrink-0" /><div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden"><div className="h-full bg-yellow-400 rounded-full" style={{ width: reviews.length ? `${(count / reviews.length) * 100}%` : '0%' }} /></div><span className="text-xs text-muted-foreground w-4 text-right">{count}</span></div>))}</div>
         </div>
       )}
-      {user && !submitted && <button onClick={() => setShowForm(v => !v)} className="w-full flex items-center justify-center gap-2 border border-dashed border-border rounded-2xl py-3 text-sm text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"><Star className="w-4 h-4" />{showForm ? 'Cancel' : 'Write a Review'}</button>}
+      {user && !submitted && !hasReviewed && (isCheckingBookings || isLoadingReviews) && <p className="text-center text-sm text-muted-foreground">Checking your completed bookings...</p>}
+      {user && !submitted && !hasReviewed && (bookingCheckFailed || reviewsLoadFailed) && <p role="alert" className="text-center text-sm text-destructive">Could not verify your booking or review history. Please refresh and try again.</p>}
+      {user && !submitted && !hasReviewed && !isCheckingBookings && !isLoadingReviews && !bookingCheckFailed && !reviewsLoadFailed && hasCompletedBooking && <button onClick={() => setShowForm(v => !v)} className="w-full flex items-center justify-center gap-2 border border-dashed border-border rounded-2xl py-3 text-sm text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"><Star className="w-4 h-4" />{showForm ? 'Cancel' : 'Write a Review'}</button>}
+      {user && !submitted && !hasReviewed && !isCheckingBookings && !isLoadingReviews && !bookingCheckFailed && !reviewsLoadFailed && !hasCompletedBooking && <p className="text-center text-sm text-muted-foreground">Complete a booking with this agency before writing a review.</p>}
+      {hasReviewed && <p className="text-center text-sm text-muted-foreground">You have already reviewed this agency.</p>}
       {submitted && <div className="flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-800"><CheckCircle2 className="w-4 h-4 shrink-0" />Thank you for your review!</div>}
       {showForm && (
         <div className="bg-card border rounded-2xl p-4 space-y-3">
@@ -238,10 +264,10 @@ function ReviewsTab({ agencyId, user }) {
           <StarRatingInput value={rating} onChange={setRating} />
           <div><Label>Comment <span className="text-muted-foreground text-xs">(optional)</span></Label><Textarea placeholder="Share your experience..." value={comment} onChange={e => setComment(e.target.value)} className="resize-none mt-1" rows={3} /></div>
           {formError && <p className="text-xs text-destructive">{formError}</p>}
-          <Button className="w-full rounded-full" onClick={handleSubmit} disabled={!rating || submitting}>{submitting && <Loader2 className="w-4 h-4 animate-spin mr-2" />}Submit Review</Button>
+          <Button className="w-full rounded-full" onClick={handleSubmit} disabled={!rating || submitting || !hasCompletedBooking || hasReviewed || isLoadingReviews || reviewsLoadFailed || bookingCheckFailed}>{submitting && <Loader2 className="w-4 h-4 animate-spin mr-2" />}Submit Review</Button>
         </div>
       )}
-      {isLoading ? <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
+      {isLoadingReviews ? <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
       : reviews.length === 0 ? <div className="rounded-2xl border border-dashed border-border bg-muted/30 p-10 text-center"><Star className="w-8 h-8 text-muted-foreground mx-auto mb-2" /><p className="text-sm font-medium text-muted-foreground">No reviews yet</p></div>
       : <div className="space-y-3">{reviews.map((review, i) => (
         <div key={i} className="bg-card border rounded-2xl p-4 space-y-2">
@@ -404,48 +430,12 @@ function ReportModal({ agency, user, onClose }) {
   );
 }
 
-function SharePackageDialog({ pkg, agency, user, isOwner, onClose }) {
-  const [caption, setCaption] = useState('');
-  const [posting, setPosting] = useState(false);
-  const [done, setDone] = useState(false);
-  const [initialized, setInitialized] = useState(false);
-  const buildCaption = () => isOwner
-    ? ['Now open for booking: ' + pkg.title + '!', '', pkg.mountain_name ? 'Mountain: ' + pkg.mountain_name : null, '', 'Book now at Melotrip - P' + (pkg.price?.toLocaleString() || '0') + ' per person!'].filter(l => l !== null).join('\n')
-    : ['Check out this package from ' + agency.name + '!', '', pkg.title, pkg.mountain_name || null, 'P' + (pkg.price?.toLocaleString() || '0') + ' per person', '', 'Find them on Melotrip!'].filter(l => l !== null).join('\n');
-  if (!initialized) { setCaption(buildCaption()); setInitialized(true); }
-  const handlePost = async () => {
-    if (!caption.trim()) return;
-    setPosting(true);
-    try {
-      const images = [];
-      if (pkg.image_url) images.push(pkg.image_url);
-      if (agency.gallery_photos?.length) agency.gallery_photos.slice(0, 4).forEach(p => { if (p !== pkg.image_url) images.push(p); });
-      await base44.entities.Post.create({ author_email: user.email, author_name: user.full_name || user.email, content: caption.trim(), image_url: images[0] || null, media_type: 'image', post_images: images, post_type: images.length > 1 ? 'carousel' : 'photo', mountain_name: pkg.mountain_name || null, status: 'active', audience: 'public', package_id: pkg.id, package_price: pkg.price, agency_id: agency.id, agency_name: agency.name });
-      setDone(true);
-    } catch (err) { console.error('Share post error:', err); } finally { setPosting(false); }
-  };
-  return (
-    <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
-        <DialogHeader><DialogTitle className="flex items-center gap-2">{isOwner ? <><Megaphone className="w-4 h-4 text-primary" />Promote Package</> : <><Share2 className="w-4 h-4 text-primary" />Share to Feed</>}</DialogTitle></DialogHeader>
-        {done ? (
-          <div className="text-center space-y-3 py-4"><CheckCircle2 className="w-12 h-12 text-primary mx-auto" /><p className="font-semibold">Posted to Feed!</p><Button className="w-full rounded-full" onClick={onClose}>Done</Button></div>
-        ) : (
-          <div className="space-y-4">
-            <div className="rounded-xl border overflow-hidden"><div className="h-28 bg-muted relative"><img src={pkg.image_url || 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=600'} alt={pkg.title} className="w-full h-full object-cover" /><div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" /><div className="absolute bottom-2 left-3 text-white"><p className="font-bold text-sm">{pkg.title}</p></div></div></div>
-            <div><Label>Caption</Label><Textarea value={caption} onChange={e => setCaption(e.target.value)} className="resize-none mt-1 text-sm" rows={7} /></div>
-            <div className="flex gap-2"><Button variant="outline" className="flex-1 rounded-full" onClick={onClose}>Cancel</Button><Button className="flex-1 rounded-full" onClick={handlePost} disabled={!caption.trim() || posting}>{posting && <Loader2 className="w-4 h-4 animate-spin mr-2" />}{isOwner ? 'Promote Now' : 'Share to Feed'}</Button></div>
-          </div>
-        )}
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 export default function AgencyDetail() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { user } = useAuth();
   const agencyId = window.location.pathname.split('/agencies/')[1];
+  const sharedPackageId = searchParams.get('package');
 
   const [bookingPkg, setBookingPkg] = useState(null);
   const [bookForm, setBookForm] = useState({
@@ -465,6 +455,7 @@ export default function AgencyDetail() {
   const [shareMsg, setShareMsg] = useState('');
   const [sharePkg, setSharePkg] = useState(null);
   const [pkgDetailsView, setPkgDetailsView] = useState(null);
+  const [packagePhotoIndex, setPackagePhotoIndex] = useState(null);
 
   // Downpayment receipt upload states
   const [dpReceiptFile,      setDpReceiptFile]      = useState(null);
@@ -483,6 +474,11 @@ export default function AgencyDetail() {
     queryFn: () => base44.entities.TourPackage.filter({ agency_id: agencyId, status: 'active' }),
     enabled: !!agencyId,
   });
+  useEffect(() => {
+    if (!sharedPackageId || !packages.length) return;
+    const sharedPackage = packages.find(pkg => pkg.id === sharedPackageId);
+    if (sharedPackage) setPkgDetailsView(sharedPackage);
+  }, [packages, sharedPackageId]);
   const { data: agencySubs = [] } = useQuery({
     queryKey: ['agency-sub', agencyId],
     queryFn: () => base44.entities.AgencySubscription.filter({ agency_id: agencyId, status: 'verified' }),
@@ -525,6 +521,9 @@ export default function AgencyDetail() {
   const platformFee = Math.round(totalPrice * commissionRate / 100);
   const isAgencyOwner = user?.email === agency?.owner_email;
   const galleryPhotos = agency?.gallery_photos?.length ? agency.gallery_photos : agency?.cover_url ? [agency.cover_url] : [];
+  const packagePhotos = pkgDetailsView
+    ? [pkgDetailsView.image_url || 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=800', ...(pkgDetailsView.package_photos || [])]
+    : [];
   const avgRating = reviews.length ? (reviews.reduce((s, r) => s + (r.rating || 0), 0) / reviews.length).toFixed(1) : null;
   const specialtyMountains = [...new Set(packages.map(p => p.mountain_name).filter(Boolean))];
   const today = localToday();
@@ -895,7 +894,14 @@ export default function AgencyDetail() {
           <DialogHeader><DialogTitle>{pkgDetailsView?.title}</DialogTitle></DialogHeader>
           {pkgDetailsView && (
             <div className="space-y-4">
-              <img src={pkgDetailsView.image_url || 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=800'} alt="" className="w-full h-64 object-cover rounded-xl" />
+              <button
+                type="button"
+                className="block w-full overflow-hidden rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                onClick={() => setPackagePhotoIndex(0)}
+                aria-label="View package photo"
+              >
+                <img src={packagePhotos[0]} alt="" className="w-full h-64 object-cover" />
+              </button>
               
               <div className="grid grid-cols-2 gap-2 text-sm">
                 <div className="bg-muted/50 rounded-lg p-2"><p className="text-muted-foreground text-xs">Destination</p><p className="font-semibold">{pkgDetailsView.mountain_name}</p></div>
@@ -956,7 +962,15 @@ export default function AgencyDetail() {
                   <p className="font-semibold text-sm">Photos</p>
                   <div className="grid grid-cols-3 gap-2">
                     {pkgDetailsView.package_photos.map((photo, i) => (
-                      <img key={i} src={photo} alt="" className="w-full h-24 object-cover rounded-lg" />
+                      <button
+                        key={i}
+                        type="button"
+                        className="overflow-hidden rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                        onClick={() => setPackagePhotoIndex(i + 1)}
+                        aria-label={`View package photo ${i + 1}`}
+                      >
+                        <img src={photo} alt="" className="w-full h-24 object-cover transition-transform hover:scale-105" />
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -964,6 +978,13 @@ export default function AgencyDetail() {
 
               <Button className="w-full" size="lg" onClick={() => { setPkgDetailsView(null); setBookingPkg(pkgDetailsView); }}>Book Now</Button>
             </div>
+          )}
+          {packagePhotoIndex !== null && packagePhotos.length > 0 && (
+            <PhotoLightbox
+              photos={packagePhotos}
+              startIndex={packagePhotoIndex}
+              onClose={() => setPackagePhotoIndex(null)}
+            />
           )}
         </DialogContent>
       </Dialog>
@@ -1199,7 +1220,7 @@ export default function AgencyDetail() {
         </DialogContent>
       </Dialog>
 
-      {sharePkg && user && <SharePackageDialog pkg={sharePkg} agency={agency} user={user} isOwner={isAgencyOwner} onClose={() => setSharePkg(null)} />}
+      {sharePkg && user && <SharePackageDialog pkg={sharePkg} agency={agency} user={user} onClose={() => setSharePkg(null)} />}
       {showReport && user && <ReportModal agency={agency} user={user} onClose={() => setShowReport(false)} />}
     </div>
   );

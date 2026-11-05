@@ -22,20 +22,24 @@ async function run() {
     process.exit(1);
   }
 
-  const sqlPath = path.resolve(__dirname, 'migrations', 'gamification_tables.sql');
-  if (!fs.existsSync(sqlPath)) {
-    console.error('Migration file not found:', sqlPath);
+  const migrationPaths = [
+    path.resolve(__dirname, 'migrations', 'gamification_tables.sql'),
+    path.resolve(__dirname, 'migrations', 'agency_documents.sql'),
+  ];
+  const missingMigration = migrationPaths.find((migrationPath) => !fs.existsSync(migrationPath));
+  if (missingMigration) {
+    console.error('Migration file not found:', missingMigration);
     process.exit(1);
   }
-
-  const sql = fs.readFileSync(sqlPath, 'utf8');
 
   const client = new Client({ connectionString: databaseUrl });
   try {
     await client.connect();
     console.log('Connected to database, running migration...');
     await client.query('BEGIN');
-    await client.query(sql);
+    for (const migrationPath of migrationPaths) {
+      await client.query(fs.readFileSync(migrationPath, 'utf8'));
+    }
     await client.query('COMMIT');
     console.log('Migration applied successfully.');
   } catch (err) {
@@ -47,4 +51,6 @@ async function run() {
   }
 }
 
-if (require.main === module) run();
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  void run();
+}

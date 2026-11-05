@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
@@ -8,8 +8,9 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Store, CheckCircle2, Loader2, Clock, AlertCircle, ImagePlus, X } from 'lucide-react';
+import { Store, CheckCircle2, Loader2, Clock, AlertCircle, ImagePlus, X, FileText, Upload } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { uploadAgencyDocument } from '@/lib/agencyDocuments';
 
 const isMissingColumnError = (error) => {
   const message = `${error?.message || ''} ${error?.details || ''}`;
@@ -26,7 +27,7 @@ const findMissingColumn = (error) => {
 const insertAgency = async (payload) => {
   let nextPayload = { ...payload };
 
-  for (let attempt = 0; attempt < 8; attempt += 1) {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
     const { data, error } = await supabase
       .from('agencies')
       .insert(nextPayload)
@@ -35,6 +36,10 @@ const insertAgency = async (payload) => {
 
     if (!error) return data;
     const missingColumn = findMissingColumn(error);
+
+    if (['business_reg_document_path', 'permit_document_path'].includes(missingColumn)) {
+      throw new Error('Agency document storage is not configured yet. Ask an administrator to apply the latest database migration.');
+    }
 
     if (!isMissingColumnError(error) || !missingColumn || !(missingColumn in nextPayload)) {
       throw error;
@@ -50,6 +55,7 @@ const insertAgency = async (payload) => {
 export default function AgencyRegister() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [form, setForm] = useState({ name: '', description: '', contact_phone: '', location: '', website: '' });
   const [submitted, setSubmitted] = useState(false);
 
@@ -59,12 +65,27 @@ export default function AgencyRegister() {
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingCover, setUploadingCover] = useState(false);
   const [uploadError, setUploadError] = useState('');
+  const [documentPaths, setDocumentPaths] = useState({
+    business_reg_document_path: '',
+    permit_document_path: '',
+  });
+  const [uploadingDocument, setUploadingDocument] = useState(null);
+  const [savingDocuments, setSavingDocuments] = useState(false);
 
   const { data: existing = [] } = useQuery({
     queryKey: ['my-agency', user?.email],
     queryFn: () => base44.entities.Agency.filter({ owner_email: user?.email }),
     enabled: !!user?.email,
   });
+
+  useEffect(() => {
+    const agency = existing[0];
+    if (!agency) return;
+    setDocumentPaths({
+      business_reg_document_path: agency.business_reg_document_path || '',
+      permit_document_path: agency.permit_document_path || '',
+    });
+  }, [existing]);
 
   const createMutation = useMutation({
     mutationFn: insertAgency,
@@ -90,6 +111,20 @@ export default function AgencyRegister() {
     }
   };
 
+  const handleDocumentUpload = async (file, field, agencyId = 'applications') => {
+    if (!file) return;
+    setUploadError('');
+    setUploadingDocument(field);
+    try {
+      const path = await uploadAgencyDocument(file, user.id, agencyId);
+      setDocumentPaths(current => ({ ...current, [field]: path }));
+    } catch (err) {
+      setUploadError(err.message || 'Document upload failed.');
+    } finally {
+      setUploadingDocument(null);
+    }
+  };
+
   const handleSubmit = () => {
     if (!user?.id || !user?.email) return;
 
@@ -110,10 +145,33 @@ export default function AgencyRegister() {
       // ✅ NEW: include images
       logo_url: logoUrl || null,
       cover_url: coverUrl || null,
+      ...documentPaths,
     });
   };
 
   const myAgency = existing[0];
+
+  const handleSaveDocuments = async () => {
+    if (!myAgency) return;
+    setSavingDocuments(true);
+    setUploadError('');
+    try {
+      const updatedAgency = await base44.entities.Agency.update(myAgency.id, {
+        business_reg_document_path: documentPaths.business_reg_document_path || null,
+        permit_document_path: documentPaths.permit_document_path || null,
+      });
+      for (const field of ['business_reg_document_path', 'permit_document_path']) {
+        if (!Object.prototype.hasOwnProperty.call(updatedAgency || {}, field)) {
+          throw new Error('Agency document storage is not configured yet. Ask an administrator to apply the latest database migration.');
+        }
+      }
+      await queryClient.invalidateQueries({ queryKey: ['my-agency', user?.email] });
+    } catch (error) {
+      setUploadError(error.message || 'Could not save your agency documents.');
+    } finally {
+      setSavingDocuments(false);
+    }
+  };
 
   if (myAgency) {
     return (
@@ -137,6 +195,48 @@ export default function AgencyRegister() {
             ? 'Your agency is live! Manage your packages and bookings.'
             : 'Your application was rejected. Contact support for more info.'}
         </p>
+        <div className="text-left bg-card border rounded-2xl p-4 space-y-3">
+          <div>
+            <p className="text-sm font-semibold">Verification documents</p>
+            <p className="text-xs text-muted-foreground mt-1">Upload privately for Melotrip admin review. PDF, JPG, PNG, or WebP up to 10MB.</p>
+          </div>
+          {[
+            { field: 'business_reg_document_path', label: 'Business Registration' },
+            { field: 'permit_document_path', label: 'DOLE / Operating Permit' },
+          ].map(({ field, label }) => (
+            <div key={field} className="flex items-center gap-3 rounded-lg border p-3">
+              <FileText className="w-5 h-5 text-primary shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium">{label}</p>
+                <p className="text-xs text-muted-foreground">{documentPaths[field] ? 'Uploaded privately' : 'Not submitted'}</p>
+              </div>
+              <label className="inline-flex items-center gap-1.5 rounded-full border px-3 py-2 text-xs font-medium cursor-pointer hover:bg-muted shrink-0">
+                {uploadingDocument === field ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                {documentPaths[field] ? 'Replace' : 'Upload'}
+                <input
+                  type="file"
+                  accept=".pdf,image/jpeg,image/png,image/webp"
+                  className="hidden"
+                  disabled={!!uploadingDocument}
+                  onChange={event => {
+                    handleDocumentUpload(event.target.files?.[0], field, myAgency.id);
+                    event.target.value = '';
+                  }}
+                />
+              </label>
+            </div>
+          ))}
+          {uploadError && <p role="alert" className="text-xs text-destructive">{uploadError}</p>}
+          <Button
+            type="button"
+            className="w-full min-h-10 rounded-xl"
+            onClick={handleSaveDocuments}
+            disabled={savingDocuments || !!uploadingDocument}
+          >
+            {savingDocuments && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+            Save verification documents
+          </Button>
+        </div>
         {myAgency.status === 'approved' && (
           <div className="flex gap-2 justify-center flex-wrap">
             <Button className="rounded-full" onClick={() => navigate('/agency-dashboard')}>Agency Dashboard</Button>
@@ -240,6 +340,56 @@ export default function AgencyRegister() {
           )}
         </div>
 
+        <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-3">
+          <div>
+            <p className="text-sm font-semibold">Agency verification documents</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Optional for now. Upload a business registration and/or DOLE or operating permit for admin review.
+              These files are private to you and Melotrip admins.
+            </p>
+          </div>
+          {[
+            { field: 'business_reg_document_path', label: 'Business Registration' },
+            { field: 'permit_document_path', label: 'DOLE / Operating Permit' },
+          ].map(({ field, label }) => (
+            <div key={field} className="flex items-center gap-3 rounded-lg border bg-background p-3">
+              <FileText className="w-5 h-5 text-primary shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium">{label}</p>
+                <p className="text-xs text-muted-foreground">
+                  {documentPaths[field] ? 'Uploaded privately' : 'PDF, JPG, PNG, or WebP · max 10MB'}
+                </p>
+              </div>
+              {documentPaths[field] ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="rounded-full shrink-0"
+                  onClick={() => setDocumentPaths(current => ({ ...current, [field]: '' }))}
+                >
+                  <X className="w-3.5 h-3.5 mr-1" /> Remove
+                </Button>
+              ) : (
+                <label className="inline-flex items-center gap-1.5 rounded-full border px-3 py-2 text-xs font-medium cursor-pointer hover:bg-muted shrink-0">
+                  {uploadingDocument === field ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                  {uploadingDocument === field ? 'Uploading' : 'Upload'}
+                  <input
+                    type="file"
+                    accept=".pdf,image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    disabled={!!uploadingDocument}
+                    onChange={event => {
+                      handleDocumentUpload(event.target.files?.[0], field);
+                      event.target.value = '';
+                    }}
+                  />
+                </label>
+              )}
+            </div>
+          ))}
+        </div>
+
         {uploadError && (
           <div className="flex gap-2 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -291,7 +441,7 @@ export default function AgencyRegister() {
         <Button
           className="w-full rounded-full"
           onClick={handleSubmit}
-          disabled={!form.name || !form.description || !form.contact_phone || createMutation.isPending || uploadingLogo || uploadingCover}
+          disabled={!form.name || !form.description || !form.contact_phone || createMutation.isPending || uploadingLogo || uploadingCover || !!uploadingDocument}
         >
           {createMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
           Submit Registration

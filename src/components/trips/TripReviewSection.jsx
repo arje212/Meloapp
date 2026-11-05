@@ -44,7 +44,7 @@ export default function TripReviewSection({ trip, members = [] }) {
         .from('trip_reviews')
         .select('*')
         .eq('trip_id', trip.id)
-        .order('created_at', { ascending: false });
+        .order('created_date', { ascending: false });
       if (error) throw error;
       return data;
     },

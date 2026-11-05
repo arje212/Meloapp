@@ -62,6 +62,14 @@
     "gcash_name": {
       "type": "string",
       "description": "GCash account holder name"
+    },
+    "business_reg_document_path": {
+      "type": "string",
+      "description": "Private storage path for the agency business registration document"
+    },
+    "permit_document_path": {
+      "type": "string",
+      "description": "Private storage path for the agency DOLE or operating permit"
     }
   },
   "required": [

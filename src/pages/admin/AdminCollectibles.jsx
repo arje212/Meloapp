@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '@/lib/AuthContext';
 import { base44 } from '@/api/base44Client';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -12,7 +13,11 @@ import {
 import { format } from 'date-fns';
 
 import { PLAN_COMMISSION, pickActiveSubscription } from '@/lib/plans';
-import { isCommissionConfirmed, commissionConfirmPatch } from '@/lib/commission';
+import {
+  isCommissionConfirmed,
+  commissionConfirmPatch,
+  notifyAgencyCommissionConfirmed,
+} from '@/lib/commission';
 
 const QUERY_KEYS = {
   completedBookings: ['admin-completed-bookings'],
@@ -21,6 +26,7 @@ const QUERY_KEYS = {
 };
 
 export default function AdminCollectibles() {
+  const { user } = useAuth();
   const qc = useQueryClient();
   const [search, setSearch] = useState('');
   const [expandedAgency, setExpandedAgency] = useState(null);
@@ -109,7 +115,9 @@ export default function AdminCollectibles() {
 
   const handleMarkCollected = async (bookingId) => {
     try {
+      const booking = bookings.find(b => b.id === bookingId);
       await base44.entities.Booking.update(bookingId, commissionConfirmPatch());
+      if (booking) await notifyAgencyCommissionConfirmed({ booking, fromEmail: user?.email });
       invalidate();
     } catch (err) {
       alert('Error: ' + err.message);
@@ -123,6 +131,17 @@ export default function AdminCollectibles() {
           base44.entities.Booking.update(id, commissionConfirmPatch())
         )
       );
+      const agencyBookings = bookings.filter(b => bookingIds.includes(b.id));
+      const row = summaryRows.find(r => r.agencyId === agencyBookings[0]?.agency_id);
+      if (row && agencyBookings.length) {
+        await notifyAgencyCommissionConfirmed({
+          agency: row.agency,
+          booking: agencyBookings[0],
+          bookingCount: agencyBookings.length,
+          totalFee: row.pendingFee,
+          fromEmail: user?.email,
+        });
+      }
       invalidate();
     } catch (err) {
       alert('Error: ' + err.message);

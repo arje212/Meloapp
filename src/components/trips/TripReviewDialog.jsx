@@ -20,6 +20,7 @@ export default function TripReviewDialog({ trip, open, onOpenChange, onReviewed 
   const [photos, setPhotos] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
   const [done, setDone] = useState(false);
 
   const xpEarned = Math.min(200,
@@ -43,6 +44,7 @@ export default function TripReviewDialog({ trip, open, onOpenChange, onReviewed 
 
   const handleSubmit = async () => {
     if (!rating) return;
+    setSubmitError('');
     setSubmitting(true);
     const { error } = await supabase.from('trip_reviews').insert({
       trip_id: trip.id,
@@ -57,7 +59,12 @@ export default function TripReviewDialog({ trip, open, onOpenChange, onReviewed 
       photos,
       xp_awarded: xpEarned,
     });
-    if (error) { console.error(error); setSubmitting(false); return; }
+    if (error) {
+      console.error('Trip review failed:', error);
+      setSubmitError(`Could not save your review. Please try again.${error.message ? ` (${String(error.message).slice(0, 140)})` : ''}`);
+      setSubmitting(false);
+      return;
+    }
     await unlockAchievement(user.email, user.full_name, 'trip_reviewer', {
       title: 'Trail Writer',
       description: 'Submitted a trip review',
@@ -138,6 +145,7 @@ export default function TripReviewDialog({ trip, open, onOpenChange, onReviewed 
               <span className="font-bold text-primary">+{xpEarned} XP</span>
             </div>
 
+            {submitError && <p className="text-xs text-destructive">{submitError}</p>}
             <Button className="w-full rounded-full" onClick={handleSubmit} disabled={!rating || submitting}>
               {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
               Submit Review

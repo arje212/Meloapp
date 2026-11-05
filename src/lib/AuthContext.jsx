@@ -106,7 +106,7 @@ export const AuthProvider = ({ children }) => {
         .filter(Boolean)
         .map((presence) => ({
           email: presence.email,
-          name: presence.name || presence.email,
+          name: presence.name || 'Hiker',
           role: presence.role || 'user',
           onlineAt: presence.onlineAt,
         }))
@@ -122,7 +122,7 @@ export const AuthProvider = ({ children }) => {
         if (status !== 'SUBSCRIBED') return;
         await channel.track({
           email: user.email,
-          name: user.full_name || user.email,
+          name: user.full_name || 'Hiker',
           role: user.role || 'user',
           onlineAt: new Date().toISOString(),
         });

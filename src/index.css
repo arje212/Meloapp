@@ -94,6 +94,28 @@
   }
 }
 
+@media (max-width: 767px) {
+  .app-page-content > *,
+  .admin-page-content > *,
+  .public-profile-page {
+    max-width: none;
+    margin-left: 0;
+    margin-right: 0;
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .admin-content-shell {
+    max-width: none;
+    margin-left: 0;
+    margin-right: 0;
+  }
+
+  .admin-page-content {
+    padding: 0;
+  }
+}
+
 /* Map and gamification animations */
 .animated-trail {
   stroke-dasharray: 8 6;

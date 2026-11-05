@@ -1,10 +1,11 @@
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { Compass, Home, Map, CalendarDays, Store, MessageCircle, User, Shield } from 'lucide-react';
+import { Home, Map, CalendarDays, Store, MessageCircle, User, Shield } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/lib/AuthContext';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { base44 } from '@/api/base44Client';
+import BrandLogo from '@/components/BrandLogo';
 
 /**
  * AgencyNavLink reads from the same query key used everywhere else in the app
@@ -41,6 +42,7 @@ export default function AppLayout() {
   const location = useLocation();
   const { user } = useAuth();
   const [unreadCount, setUnreadCount] = useState(0);
+  const isChatRoom = /^\/chat\/[^/]+/.test(location.pathname);
 
   // Poll for unread messages every 10 seconds
   useEffect(() => {
@@ -89,13 +91,11 @@ export default function AppLayout() {
   ];
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className={`min-h-screen bg-background flex flex-col ${isChatRoom ? 'h-[100dvh] min-h-0 overflow-hidden' : ''}`}>
       {/* Desktop header */}
       <header className="hidden md:flex items-center justify-between px-6 py-3 border-b bg-card/80 backdrop-blur-md sticky top-0 z-50">
         <Link to="/" className="flex items-center gap-2">
-          <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center">
-            <Compass className="w-5 h-5 text-primary-foreground" />
-          </div>
+          <BrandLogo size={36} rounded="lg" />
           <span className="font-display text-xl font-bold text-foreground">Melotrip</span>
         </Link>
 
@@ -147,12 +147,12 @@ export default function AppLayout() {
         </nav>
       </header>
 
-      <main className="flex-1 pb-24 md:pb-0">
+      <main className={`app-page-content ${isChatRoom ? 'flex-1 min-h-0 overflow-hidden pb-0' : 'flex-1 pb-24 md:pb-0'}`}>
         <Outlet />
       </main>
 
       {/* Mobile bottom nav */}
-      <nav
+      {!isChatRoom && <nav
         className="md:hidden fixed bottom-0 left-0 right-0 bg-card border-t z-50 px-1"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
@@ -182,7 +182,7 @@ export default function AppLayout() {
             );
           })}
         </div>
-      </nav>
+      </nav>}
     </div>
   );
 }

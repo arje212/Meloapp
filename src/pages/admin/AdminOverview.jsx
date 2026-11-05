@@ -26,18 +26,18 @@ export default function AdminOverview() {
 
   return (
     <div>
-      <h2 className="font-display text-2xl font-bold mb-6">Dashboard Overview</h2>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <h2 className="mb-6 font-display text-xl font-bold sm:text-2xl">Dashboard Overview</h2>
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-4">
         {stats.map(s => (
           <Card key={s.label}>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${s.color}`}>
+            <CardContent className="p-3 sm:p-4">
+              <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+                <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl sm:h-10 sm:w-10 ${s.color}`}>
                   <s.icon className="w-5 h-5" />
                 </div>
-                <div>
-                  <p className="text-2xl font-bold">{s.value}</p>
-                  <p className="text-xs text-muted-foreground">{s.label}</p>
+                <div className="min-w-0">
+                  <p className="break-words text-lg font-bold sm:text-2xl">{s.value}</p>
+                  <p className="text-[11px] leading-tight text-muted-foreground sm:text-xs">{s.label}</p>
                   {s.sub && <p className="text-[10px] text-yellow-600">{s.sub}</p>}
                 </div>
               </div>
@@ -47,17 +47,17 @@ export default function AdminOverview() {
       </div>
 
       {/* Recent activity */}
-      <div className="grid md:grid-cols-2 gap-6 mt-8">
+      <div className="mt-6 grid gap-4 sm:mt-8 sm:gap-6 md:grid-cols-2">
         <Card>
           <CardHeader><CardTitle className="text-base">Recent Bookings</CardTitle></CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent className="space-y-4 sm:space-y-3">
             {bookings.slice(0, 5).map(b => (
-              <div key={b.id} className="flex items-center justify-between text-sm">
-                <div>
-                  <p className="font-medium">{b.package_title}</p>
-                  <p className="text-xs text-muted-foreground">{b.user_name || b.user_email}</p>
+              <div key={b.id} className="flex flex-col gap-1 text-sm sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <p className="break-words font-medium">{b.package_title}</p>
+                  <p className="break-all text-xs text-muted-foreground">{b.user_name || b.user_email}</p>
                 </div>
-                <div className="text-right">
+                <div className="shrink-0 sm:text-right">
                   <p className="font-semibold text-primary">₱{b.total_price?.toLocaleString()}</p>
                   <p className="text-xs text-muted-foreground">{b.status}</p>
                 </div>
@@ -69,14 +69,14 @@ export default function AdminOverview() {
 
         <Card>
           <CardHeader><CardTitle className="text-base">Pending Agencies</CardTitle></CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent className="space-y-4 sm:space-y-3">
             {agencies.filter(a => a.status === 'pending').slice(0, 5).map(a => (
-              <div key={a.id} className="flex items-center justify-between text-sm">
-                <div>
-                  <p className="font-medium">{a.name}</p>
-                  <p className="text-xs text-muted-foreground">{a.owner_email}</p>
+              <div key={a.id} className="flex flex-col gap-1 text-sm sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <p className="break-words font-medium">{a.name}</p>
+                  <p className="break-all text-xs text-muted-foreground">{a.owner_email}</p>
                 </div>
-                <span className="text-xs text-yellow-600">Pending</span>
+                <span className="shrink-0 text-xs text-yellow-600">Pending</span>
               </div>
             ))}
             {pendingAgencies === 0 && <p className="text-sm text-muted-foreground">No pending agencies</p>}

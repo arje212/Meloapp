@@ -18,6 +18,23 @@ import FollowButton from '@/components/social/FollowButton';
 import TripPostCard from '@/components/trips/TripPostCard';
 
 const isVideoMedia = (type = '') => type === 'video';
+const PACKAGE_DETAILS_MARKER = '\n\n[[MELOTRIP_PACKAGE_DETAILS:';
+
+function getPackagePostDetails(content = '') {
+  const rawContent = typeof content === 'string' ? content : '';
+  const markerIndex = rawContent.lastIndexOf(PACKAGE_DETAILS_MARKER);
+  if (markerIndex < 0) return { caption: rawContent, details: null };
+  const json = rawContent.slice(markerIndex + PACKAGE_DETAILS_MARKER.length).replace(/\]\]$/, '');
+  try {
+    const details = JSON.parse(json);
+    return {
+      caption: rawContent.slice(0, markerIndex),
+      details: details && typeof details === 'object' ? details : null,
+    };
+  } catch {
+    return { caption: rawContent.slice(0, markerIndex), details: null };
+  }
+}
 
 // ── Parse experience meta ─────────────────────────────────────────────────────
 function parseExperienceContent(rawContent) {
@@ -105,73 +122,82 @@ function ExperienceMeta({ meta, mountainName }) {
 // ── Package Promo CTA Card ────────────────────────────────────────────────────
 // Shown when a post was shared/promoted from a tour package.
 // Clicking anywhere on it navigates to /agencies/:agencyId
-function PackagePromoCard({ post }) {
+function PackagePromoCard({ post, details }) {
   const navigate = useNavigate();
-
-  // Fields saved by SharePackageDialog
-  const { package_id, package_price, agency_id, agency_name, mountain_name } = post;
+  const { package_id, package_price, agency_id, agency_name, mountain_name, package_title } = post;
+  const pkg = details || post.package_details || {};
   if (!agency_id) return null;
 
   const handleClick = (e) => {
     e.stopPropagation();
-    navigate(`/agencies/${agency_id}`);
+    navigate(`/agencies/${agency_id}?package=${package_id}`);
   };
+  const toList = value => Array.isArray(value)
+    ? value.filter(Boolean)
+    : String(value || '').split(/\r?\n|,/).map(item => item.trim()).filter(Boolean);
+  const title = pkg.title || package_title || 'Tour Package';
+  const includes = toList(pkg.includes);
+  const itinerary = toList(pkg.nature_spots);
+  const pickups = toList(pkg.pickup_locations);
+  const dropoffs = toList(pkg.dropoff_locations);
+  const otherPickups = toList(pkg.other_pickup_locations);
+  const openFor = toList(pkg.open_for);
+  const today = new Date();
+  const todayString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const dates = toList(pkg?.available_dates).filter(date => date >= todayString).sort().slice(0, 3);
 
   return (
-    <div
-      className="mx-4 mb-4 rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/5 to-primary/10 overflow-hidden cursor-pointer hover:shadow-md hover:border-primary/40 transition-all group"
-      onClick={handleClick}
-    >
-      <div className="p-3 flex items-center gap-3">
-        {/* Icon */}
-        <div className="w-10 h-10 rounded-xl bg-primary/15 flex items-center justify-center shrink-0 group-hover:bg-primary/25 transition-colors">
-          <ShoppingBag className="w-5 h-5 text-primary" />
+    <section aria-label={`${title} booking details`} className="px-4 pb-4">
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+          <div className="min-w-0">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-primary">{agency_name || 'Travel Agency'} · Tour package</p>
+            <h2 className="mt-0.5 break-words text-base font-bold leading-tight text-foreground">{title}</h2>
+            {(pkg.mountain_name || mountain_name) && <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground"><Mountain className="h-3 w-3 shrink-0" />{pkg.mountain_name || mountain_name}</p>}
+          </div>
+          <p className="shrink-0 text-base font-bold text-primary">₱{Number(pkg.price ?? package_price ?? 0).toLocaleString()} <span className="text-[10px] font-normal text-muted-foreground">/ person</span></p>
         </div>
 
-        {/* Info */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <p className="text-sm font-bold text-foreground leading-tight">{agency_name}</p>
-            <span className="text-[10px] bg-primary/10 text-primary font-semibold px-1.5 py-0.5 rounded-full border border-primary/20">
-              Tour Package
-            </span>
-          </div>
-          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-            {mountain_name && (
-              <span className="text-xs text-muted-foreground flex items-center gap-0.5">
-                <Mountain className="w-3 h-3" />{mountain_name}
-              </span>
-            )}
-            {Number(package_price) > 0 && (
-              <span className="text-xs font-semibold text-primary">
-                ₱{Number(package_price).toLocaleString()} / pax
-              </span>
-            )}
-          </div>
+        {pkg.promo_text && <p className="text-xs font-semibold text-orange-700">{pkg.promo_text}</p>}
+        {pkg.description && <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">{pkg.description}</p>}
+
+        <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
+          {pkg.duration_days && <span>{pkg.duration_days} day{Number(pkg.duration_days) === 1 ? '' : 's'}</span>}
+          {pkg.max_pax && <span>Up to {pkg.max_pax} people</span>}
+          {dates.length > 0 && <span>Dates: {dates.map(date => new Date(`${date}T00:00:00`).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })).join(', ')}</span>}
         </div>
 
-        {/* CTA */}
-        <div className="shrink-0">
-          <div className="flex items-center gap-1 bg-primary text-primary-foreground text-xs font-bold px-3 py-1.5 rounded-full group-hover:bg-primary/90 transition-colors">
-            Book Now
-            <ArrowRight className="w-3 h-3" />
-          </div>
-        </div>
+        {includes.length > 0 && <p className="text-xs leading-relaxed text-muted-foreground"><span className="font-semibold text-foreground">Includes: </span>{includes.slice(0, 5).join(' · ')}{includes.length > 5 ? ` · +${includes.length - 5} more` : ''}</p>}
+        {itinerary.length > 0 && <p className="text-xs leading-relaxed text-muted-foreground"><span className="font-semibold text-foreground">Places: </span>{itinerary.slice(0, 4).join(' · ')}{itinerary.length > 4 ? ` · +${itinerary.length - 4} more` : ''}</p>}
+        {(pickups.length > 0 || dropoffs.length > 0 || otherPickups.length > 0) && <div className="space-y-1 text-xs leading-relaxed text-muted-foreground">
+          {pickups.length > 0 && <p><span className="font-semibold text-foreground">Pickup: </span>{pickups.slice(0, 3).join(' · ')}{pickups.length > 3 ? ` · +${pickups.length - 3} more` : ''}</p>}
+          {dropoffs.length > 0 && <p><span className="font-semibold text-foreground">Drop-off: </span>{dropoffs.slice(0, 3).join(' · ')}{dropoffs.length > 3 ? ` · +${dropoffs.length - 3} more` : ''}</p>}
+          {otherPickups.length > 0 && <p><span className="font-semibold text-foreground">Other pickup options: </span>{otherPickups.slice(0, 3).join(' · ')}{otherPickups.length > 3 ? ` · +${otherPickups.length - 3} more` : ''}</p>}
+        </div>}
+        {openFor.length > 0 && <p className="text-xs text-muted-foreground"><span className="font-semibold text-foreground">Good for: </span>{openFor.slice(0, 5).join(' · ')}</p>}
+
+        <button type="button" onClick={handleClick} className="inline-flex min-h-10 items-center gap-1.5 rounded-full bg-primary px-4 py-2 text-xs font-bold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2">
+          View package & booking <ArrowRight className="h-3.5 w-3.5" />
+        </button>
       </div>
-
-      {/* Bottom hint */}
-      <div className="px-3 pb-2.5 flex items-center gap-1 text-[10px] text-muted-foreground">
-        <span>Tap to view this package at</span>
-        <span className="font-semibold text-primary">{agency_name}</span>
-        <span>on Melotrip</span>
-      </div>
-    </div>
+    </section>
   );
 }
 
 // ── Fullscreen Image Viewer ───────────────────────────────────────────────────
 function FullscreenViewer({ images, startIndex, onClose }) {
   const [index, setIndex] = useState(startIndex);
+  const touchStartRef = useRef(null);
+  const suppressClickRef = useRef(false);
+
+  useEffect(() => {
+    [index - 1, index + 1]
+      .filter(i => i >= 0 && i < images.length)
+      .forEach(i => {
+        const image = new window.Image();
+        image.src = images[i];
+      });
+  }, [images, index]);
 
   useEffect(() => {
     const handleKey = (e) => {
@@ -184,7 +210,28 @@ function FullscreenViewer({ images, startIndex, onClose }) {
   }, [images.length, onClose]);
 
   return (
-    <div className="fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center"
+      onClick={e => {
+        if (suppressClickRef.current) {
+          suppressClickRef.current = false;
+          e.stopPropagation();
+          return;
+        }
+        onClose();
+      }}
+      onTouchStart={e => { touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }}
+      onTouchEnd={e => {
+        if (touchStartRef.current === null) return;
+        const deltaX = e.changedTouches[0].clientX - touchStartRef.current.x;
+        const deltaY = e.changedTouches[0].clientY - touchStartRef.current.y;
+        touchStartRef.current = null;
+        if (Math.abs(deltaX) < 45 || Math.abs(deltaX) <= Math.abs(deltaY)) return;
+        suppressClickRef.current = true;
+        window.setTimeout(() => { suppressClickRef.current = false; }, 500);
+        setIndex(i => Math.max(0, Math.min(images.length - 1, i + (deltaX < 0 ? 1 : -1))));
+      }}
+    >
       <button className="absolute top-4 right-4 text-white bg-black/50 rounded-full p-2 hover:bg-black/80 transition-colors z-10" onClick={onClose}>
         <X className="w-6 h-6" />
       </button>
@@ -197,8 +244,10 @@ function FullscreenViewer({ images, startIndex, onClose }) {
         src={images[index]}
         alt=""
         className="max-w-full max-h-full object-contain select-none"
-        style={{ maxHeight: '90vh', maxWidth: '90vw' }}
+        style={{ maxHeight: '90vh', maxWidth: '90vw', touchAction: 'pan-y' }}
         onClick={e => e.stopPropagation()}
+        loading="eager"
+        decoding="async"
       />
       {index > 0 && (
         <button className="absolute left-4 top-1/2 -translate-y-1/2 text-white bg-black/50 rounded-full p-3 hover:bg-black/80 transition-colors" onClick={e => { e.stopPropagation(); setIndex(i => i - 1); }}>
@@ -225,15 +274,69 @@ function FullscreenViewer({ images, startIndex, onClose }) {
 function MediaCarousel({ images }) {
   const [index, setIndex] = useState(0);
   const [fullscreen, setFullscreen] = useState(false);
+  const [nearViewport, setNearViewport] = useState(false);
+  const containerRef = useRef(null);
+  const touchStartRef = useRef(null);
+  const suppressClickRef = useRef(false);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return undefined;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        setNearViewport(true);
+        observer.disconnect();
+      }
+    }, { rootMargin: '300px' });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!nearViewport || !images?.length) return;
+    [index - 1, index + 1]
+      .filter(i => i >= 0 && i < images.length)
+      .forEach(i => {
+        const image = new window.Image();
+        image.src = images[i];
+      });
+  }, [images, index, nearViewport]);
+
   if (!images?.length) return null;
+
   return (
     <>
       <div
+        ref={containerRef}
         className="relative bg-black cursor-pointer"
-        style={{ aspectRatio: images.length > 1 ? '4/3' : '1/1', maxHeight: 520 }}
-        onClick={() => setFullscreen(true)}
+        style={{ aspectRatio: images.length > 1 ? '4/3' : '1/1', maxHeight: 520, touchAction: 'pan-y' }}
+        onClick={() => {
+          if (suppressClickRef.current) {
+            suppressClickRef.current = false;
+            return;
+          }
+          setFullscreen(true);
+        }}
+        onTouchStart={e => { touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }}
+        onTouchEnd={e => {
+          if (touchStartRef.current === null) return;
+          const deltaX = e.changedTouches[0].clientX - touchStartRef.current.x;
+          const deltaY = e.changedTouches[0].clientY - touchStartRef.current.y;
+          touchStartRef.current = null;
+          if (Math.abs(deltaX) < 45 || Math.abs(deltaX) <= Math.abs(deltaY)) return;
+          suppressClickRef.current = true;
+          window.setTimeout(() => { suppressClickRef.current = false; }, 500);
+          setIndex(i => Math.max(0, Math.min(images.length - 1, i + (deltaX < 0 ? 1 : -1))));
+        }}
       >
-        <img src={images[index]} alt="" className="w-full h-full object-cover" style={{ maxHeight: 520 }} />
+        <img
+          src={images[index]}
+          alt=""
+          className="w-full h-full object-cover"
+          style={{ maxHeight: 520 }}
+          loading="lazy"
+          decoding="async"
+        />
         {images.length > 1 && (
           <>
             {index > 0 && (
@@ -268,7 +371,7 @@ function SingleImage({ src }) {
   return (
     <>
       <div className="bg-black overflow-hidden cursor-pointer" style={{ maxHeight: 520 }} onClick={() => setFullscreen(true)}>
-        <img src={src} alt="" className="w-full h-full object-cover" style={{ maxHeight: 520 }} />
+        <img src={src} alt="" className="w-full h-full object-cover" style={{ maxHeight: 520 }} loading="lazy" decoding="async" />
       </div>
       {fullscreen && <FullscreenViewer images={[src]} startIndex={0} onClose={() => setFullscreen(false)} />}
     </>
@@ -578,7 +681,10 @@ export default function PostCard({ post, onComment }) {
     ? parseExperienceContent(post.content)
     : { body: post.content, meta: null };
 
-  const displayRawContent = isExperiencePost ? experienceBody : post.content;
+  const packagePost = isPackagePromo ? getPackagePostDetails(post.content) : null;
+  const displayRawContent = isExperiencePost
+    ? experienceBody
+    : packagePost?.caption ?? post.content;
   const contentShort      = displayRawContent?.length > 200;
   const displayContent    = expanded || !contentShort
     ? displayRawContent
@@ -588,7 +694,7 @@ export default function PostCard({ post, onComment }) {
 
   return (
     <div
-      className="bg-card rounded-2xl border overflow-visible shadow-sm hover:shadow-md transition-shadow"
+      className="bg-card rounded-none border-x-0 border-y overflow-visible shadow-sm transition-shadow sm:rounded-2xl sm:border sm:hover:shadow-md"
       onClick={() => { if (showShare || showMore) closeAll(); }}
     >
       {/* Header */}
@@ -669,11 +775,10 @@ export default function PostCard({ post, onComment }) {
         <ExperienceMeta meta={experienceMeta} mountainName={post.mountain_name} />
       )}
 
-      {/* ── Package Promo CTA — shown BEFORE the image so it's immediately visible ── */}
-      {isPackagePromo && <PackagePromoCard post={post} />}
-
       {/* Trip card */}
       {isTripPost && <TripPostCard post={post} />}
+
+      {isPackagePromo && <PackagePromoCard post={post} details={packagePost?.details} />}
 
       {/* Media */}
       {!isTripPost && (

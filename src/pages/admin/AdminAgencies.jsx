@@ -5,6 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { CheckCircle, XCircle, Ban, Loader2, AlertTriangle } from 'lucide-react';
+import { getAgencyDocumentUrl } from '@/lib/agencyDocuments';
 
 const statusColors = {
   pending:   'bg-yellow-100 text-yellow-700',
@@ -19,6 +20,23 @@ export default function AdminAgencies() {
   const { data: agencies = [], isLoading } = useQuery({
     queryKey: ['admin-agencies'],
     queryFn: () => base44.entities.Agency.list('-created_date', 1000),
+  });
+
+  const { data: documentUrls = {}, error: documentsError } = useQuery({
+    queryKey: ['admin-agency-document-urls', agencies.map(a => [a.id, a.business_reg_document_path, a.permit_document_path])],
+    queryFn: async () => {
+      const documents = await Promise.all(agencies.flatMap(agency => [
+        ['business_reg_document_path', 'business'],
+        ['permit_document_path', 'permit'],
+      ].filter(([field]) => agency[field]).map(async ([field, kind]) => [
+        `${agency.id}:${kind}`,
+        await getAgencyDocumentUrl(agency[field]),
+      ])));
+      return Object.fromEntries(documents);
+    },
+    enabled: agencies.some(a => a.business_reg_document_path || a.permit_document_path),
+    staleTime: 5 * 60 * 1000,
+    refetchInterval: 8 * 60 * 1000,
   });
 
   // Fetch all completed bookings to compute per-agency commission status
@@ -54,12 +72,18 @@ export default function AdminAgencies() {
   return (
     <div>
       <h2 className="font-display text-2xl font-bold mb-6">Agencies ({agencies.length})</h2>
+      {documentsError && (
+        <p role="alert" className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+          Could not load agency documents: {documentsError.message}
+        </p>
+      )}
       <div className="bg-card border rounded-xl overflow-hidden overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
               <TableHead>Owner</TableHead>
+              <TableHead>Documents</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Verified</TableHead>
               <TableHead>Bookings</TableHead>
@@ -74,6 +98,23 @@ export default function AdminAgencies() {
                 <TableRow key={a.id}>
                   <TableCell className="font-medium">{a.name}</TableCell>
                   <TableCell className="text-sm">{a.owner_email}</TableCell>
+                  <TableCell>
+                    <div className="flex flex-col items-start gap-1 text-xs">
+                      {a.business_reg_document_path && (
+                        documentUrls[`${a.id}:business`]
+                          ? <a href={documentUrls[`${a.id}:business`]} target="_blank" rel="noreferrer" className="text-primary underline">Business registration</a>
+                          : <span className="text-muted-foreground">Business registration · loading</span>
+                      )}
+                      {a.permit_document_path && (
+                        documentUrls[`${a.id}:permit`]
+                          ? <a href={documentUrls[`${a.id}:permit`]} target="_blank" rel="noreferrer" className="text-primary underline">DOLE / Permit</a>
+                          : <span className="text-muted-foreground">DOLE / Permit · loading</span>
+                      )}
+                      {!a.business_reg_document_path && !a.permit_document_path && (
+                        <span className="text-muted-foreground">Not submitted</span>
+                      )}
+                    </div>
+                  </TableCell>
                   <TableCell>
                     <Badge className={statusColors[a.status] || ''}>{a.status}</Badge>
                   </TableCell>

@@ -9,6 +9,7 @@ import PostCard from '@/components/feed/PostCard';
 import CreatePostDialog from '@/components/feed/CreatePostDialog';
 import CommentsSheet from '@/components/feed/CommentsSheet';
 import { useAuth } from '@/lib/AuthContext';
+import { isTripExpired } from '@/lib/tripDates';
 
 const PAGE_SIZE = 15;
 
@@ -60,8 +61,34 @@ async function fetchPostsPage({ pageParam = 0, tab = 'all' }) {
   if (error) throw error;
   if (!posts?.length) return { posts: [], nextPage: null };
 
+  const tripIds = [...new Set(posts
+    .filter(post => post.post_type === 'trip')
+    .map(post => post.trip_data?.id)
+    .filter(Boolean))];
+  let validTripIds = new Set();
+  if (tripIds.length) {
+    const { data: trips, error: tripsError } = await supabase
+      .from('trips')
+      .select('id, status, is_public, start_date, end_date')
+      .in('id', tripIds);
+    if (tripsError) throw tripsError;
+    validTripIds = new Set((trips || [])
+      .filter(trip =>
+        trip.status !== 'completed' &&
+        trip.status !== 'cancelled' &&
+        trip.is_public !== false &&
+        !isTripExpired(trip)
+      )
+      .map(trip => trip.id));
+  }
+
+  const visiblePosts = posts.filter(post =>
+    post.post_type !== 'trip' || validTripIds.has(post.trip_data?.id)
+  );
+  if (!visiblePosts.length) return { posts: [], nextPage: posts.length === PAGE_SIZE ? pageParam + 1 : null };
+
   // Enrich with agency data
-  const authorEmails = [...new Set(posts.map(p => p.profiles?.email).filter(Boolean))];
+  const authorEmails = [...new Set(visiblePosts.map(p => p.profiles?.email).filter(Boolean))];
   const { data: agencies } = await supabase
     .from('agencies')
     .select('owner_email, name, logo_url, is_verified')
@@ -71,7 +98,7 @@ async function fetchPostsPage({ pageParam = 0, tab = 'all' }) {
   const agencyMap = {};
   agencies?.forEach(a => { agencyMap[a.owner_email] = a; });
 
-  const enriched = posts.map(p => ({ ...p, agency: agencyMap[p.profiles?.email] || null }));
+  const enriched = visiblePosts.map(p => ({ ...p, agency: agencyMap[p.profiles?.email] || null }));
 
   // Only shuffle the first page to keep pagination consistent
   const result = pageParam === 0 ? shuffle(enriched) : enriched;
@@ -450,44 +477,30 @@ export default function Feed() {
     : '?';
 
   return (
-    <div className="max-w-2xl mx-auto px-3 sm:px-4 py-5">
+    <div className="w-full max-w-2xl mx-auto px-0 py-0 sm:px-4 sm:py-5">
 
-      {/* Pull to refresh indicator */}
-      {(pulling || isRefreshing) && (
-        <div
-          className="flex justify-center items-center transition-all duration-200"
-          style={{ height: pullY || (isRefreshing ? 40 : 0), overflow: 'hidden' }}
-        >
-          <RefreshCw className={`w-5 h-5 text-primary ${isRefreshing ? 'animate-spin' : ''}`} />
-        </div>
-      )}
-
-      {/* Hero */}
-      <div className="relative rounded-3xl overflow-hidden mb-5 bg-gradient-to-br from-primary/90 to-primary p-5 md:p-7">
-        <div className="relative z-10">
-          <div className="flex items-center gap-2 mb-2">
-            <Compass className="w-5 h-5 text-primary-foreground/80" />
-            <span className="text-primary-foreground/80 text-sm font-semibold">Melotrip</span>
-          </div>
-          <h1 className="font-display text-2xl md:text-3xl font-bold text-primary-foreground mb-1.5">
-            Discover trips across the Philippines
-          </h1>
-          <p className="text-primary-foreground/70 text-sm max-w-md">
-            Share beach escapes, city finds, mountain trails, reels, and travel stories.
-          </p>
-        </div>
-        <div className="absolute top-0 right-0 w-36 h-36 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2" />
-        <div className="absolute bottom-0 left-1/2 w-28 h-28 bg-white/5 rounded-full translate-y-1/2" />
+    {/* Pull to refresh indicator */}
+    {(pulling || isRefreshing) && (
+      <div
+        className="flex justify-center items-center transition-all duration-200 sm:mx-0"
+        style={{ height: pullY || (isRefreshing ? 40 : 0), overflow: 'hidden' }}
+      >
+        <RefreshCw className={`w-5 h-5 text-primary ${isRefreshing ? 'animate-spin' : ''}`} />
       </div>
+    )}
 
-      {/* Stories Bar */}
+    {/* Stories Bar */}
+    <div className="px-3 pt-3 sm:px-0 sm:pt-0">
       <StoriesBar onCreateStory={() => openCreate('photo')} />
+    </div>
 
-      {/* Featured agencies (Pro / Yearly plans) */}
+    {/* Featured agencies (Pro / Yearly plans) */}
+    <div className="px-3 sm:px-0">
       <FeaturedAgencies />
+    </div>
 
-      {/* Create Post Box */}
-      <div className="bg-card border rounded-2xl p-4 mb-5 shadow-sm">
+    {/* Create Post Box */}
+    <div className="mx-3 bg-card border rounded-2xl p-4 mb-5 shadow-sm sm:mx-0">
         <div className="flex items-center gap-3 mb-3">
           <Avatar className="w-10 h-10 shrink-0">
             {user?.avatar_url
@@ -532,7 +545,9 @@ export default function Feed() {
       </div>
 
       {/* Filter Tabs */}
-      <FilterTabs activeTab={activeTab} onChange={(tab) => { setActiveTab(tab); }} />
+      <div className="px-3 sm:px-0">
+        <FilterTabs activeTab={activeTab} onChange={(tab) => { setActiveTab(tab); }} />
+      </div>
 
       {/* Posts */}
       {isLoading ? (
@@ -557,7 +572,7 @@ export default function Feed() {
           </Button>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-2 sm:space-y-4">
           {posts.map(post => (
             <PostCard
               key={post.id}
@@ -567,7 +582,7 @@ export default function Feed() {
           ))}
 
           {/* Infinite scroll loader */}
-          <div ref={loaderRef} className="flex justify-center py-4">
+          <div ref={loaderRef} className="flex justify-center py-4 px-3 sm:px-0">
             {isFetchingNextPage && (
               <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
             )}

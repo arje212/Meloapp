@@ -4,13 +4,18 @@
  * Shows a rich trip preview card with mountain, date, budget, and a Join button.
  */
 
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Mountain, CalendarDays, Wallet, Users, ArrowRight, CheckCircle2 } from 'lucide-react';
 import { format } from 'date-fns';
+import { supabase } from '@/lib/supabase';
+import { isTripExpired } from '@/lib/tripDates';
 
 export default function TripPostCard({ post }) {
   const navigate = useNavigate();
   const trip = post.trip_data;
+  const [checking, setChecking] = useState(false);
+  const [notice, setNotice] = useState('');
 
   if (!trip) return null;
 
@@ -22,10 +27,43 @@ export default function TripPostCard({ post }) {
     ? 'bg-green-100 text-green-700 border-green-200'
     : 'bg-primary/10 text-primary border-primary/20';
 
+  const openTrip = async () => {
+    if (checking) return;
+    setChecking(true);
+    setNotice('');
+    try {
+      const { data: currentTrip, error } = await supabase
+        .from('trips')
+        .select('id, status, is_public, start_date, end_date')
+        .eq('id', trip.id)
+        .maybeSingle();
+
+      if (error) {
+        setNotice('Could not verify trip availability. Please try again.');
+        return;
+      }
+      if (!currentTrip ||
+        currentTrip.status === 'completed' ||
+        currentTrip.status === 'cancelled' ||
+        currentTrip.is_public === false ||
+        isTripExpired(currentTrip)
+      ) {
+        setNotice('This trip is no longer available.');
+        return;
+      }
+      navigate(`/trips/${trip.id}`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Could not verify trip availability.');
+    } finally {
+      setChecking(false);
+    }
+  };
+
   return (
     <div
-      className="mx-4 mb-3 rounded-2xl border border-border bg-muted/40 overflow-hidden cursor-pointer hover:bg-muted/60 transition-colors"
-      onClick={() => navigate(`/trips/${trip.id}`)}
+      className={`mx-4 mb-3 rounded-2xl border border-border bg-muted/40 overflow-hidden transition-colors ${checking ? 'cursor-wait' : 'cursor-pointer hover:bg-muted/60'}`}
+      onClick={openTrip}
+      aria-busy={checking}
     >
       {/* Top color bar */}
       <div className="h-1.5 bg-gradient-to-r from-primary to-primary/50" />
@@ -82,12 +120,13 @@ export default function TripPostCard({ post }) {
             </p>
           )}
           <div className="flex items-center gap-1 text-xs font-semibold text-primary ml-auto">
-            {isGoing
+            {checking ? 'Checking trip...' : isGoing
               ? <><CheckCircle2 className="w-3.5 h-3.5" /> View trip</>
               : <><span>View &amp; Join</span><ArrowRight className="w-3.5 h-3.5" /></>
             }
           </div>
         </div>
+        {notice && <p className="mt-2 text-xs text-destructive">{notice}</p>}
       </div>
     </div>
   );

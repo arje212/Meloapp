@@ -2,18 +2,14 @@
 import { useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { supabase } from '@/lib/supabase';
 import { base44 } from '@/api/base44Client';
 import { useAuth } from '@/lib/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import {
-  MapPin, Mountain, Zap, Flame, Trophy, Calendar, AlertCircle,
-  ChevronRight, Check, Clock, Target, TrendingUp, Share2, Edit,
+  MapPin, Mountain, Trophy, AlertCircle, Check, Target, TrendingUp, Share2,
 } from 'lucide-react';
-import { useAddXP, useCheckIn } from '@/lib/useGamification';
-import { calculateLevel, LEVEL_TITLES } from '@/lib/gamification';
 
 // ========== IMMERSIVE ROADMAP HERO ==========
 function RoadmapHero({ roadmap, progress }) {
@@ -87,7 +83,7 @@ function RoadmapHero({ roadmap, progress }) {
             <div className="bg-white/10 backdrop-blur rounded-lg p-3">
               <p className="text-xs text-white/70 mb-1">Elevation</p>
               <p className="text-2xl font-bold text-green-300 flex items-center gap-1">
-                {Math.max(...(roadmap.conquered_mountains || []).map(m => m.elevation || 0)).toLocaleString()}m
+                {Math.max(0, ...(roadmap.conquered_mountains || []).map(m => Number(m.elevation) || 0)).toLocaleString()}m
               </p>
             </div>
             <div className="bg-white/10 backdrop-blur rounded-lg p-3">
@@ -239,10 +235,10 @@ function ConqueredGallery({ mountains }) {
 
 // ========== PROGRESS SECTION ==========
 function ProgressSection({ roadmap, destinations, conqueredMountains }) {
+  const conqueredNames = new Set(conqueredMountains?.map(m => m.name) || []);
   const completed = destinations?.filter(d => conqueredNames.has(d.name))?.length || 0;
   const total = destinations?.length || 0;
-  const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
-  const conqueredNames = new Set(conqueredMountains?.map(m => m.name) || []);
+  const progress = total ? Math.round((completed / total) * 100) : 0;
 
   return (
     <div className="space-y-6">
@@ -311,7 +307,9 @@ export default function RoadmapPage() {
     if (!roadmap?.destinations) return 0;
     const conqueredNames = new Set(roadmap.conquered_mountains?.map(m => m.name) || []);
     const completed = roadmap.destinations.filter(d => conqueredNames.has(d.name)).length;
-    return Math.round((completed / roadmap.destinations.length) * 100);
+    return roadmap.destinations.length
+      ? Math.round((completed / roadmap.destinations.length) * 100)
+      : 0;
   }, [roadmap]);
 
   if (isLoading) {

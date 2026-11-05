@@ -44,7 +44,7 @@ const PH_MOUNTAINS = [
   { name:'Mt. Guiting-Guiting', province:'Romblon',          difficulty:'Difficult', elevation:2058 },
   { name:'Mt. Ulap',            province:'Benguet',          difficulty:'Moderate',  elevation:1846 },
   { name:'Mt. Cristobal',       province:'Quezon',           difficulty:'Moderate',  elevation:1470 },
-  { name:'Mt. Makiling',        magic:'Laguna',              difficulty:'Difficult', elevation:1090 },
+  { name:'Mt. Makiling',        province:'Laguna',            difficulty:'Difficult', elevation:1090 },
   { name:'Mt. Arayat',          province:'Pampanga',         difficulty:'Moderate',  elevation:1026 },
   { name:'Mt. Maculot',         province:'Batangas',         difficulty:'Easy',      elevation:947  },
   { name:'Mt. Batulao',         province:'Batangas',         difficulty:'Easy',      elevation:811  },

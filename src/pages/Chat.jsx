@@ -15,7 +15,10 @@ import {
   Search, Edit3,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
-import { getInitials, fetchMyChatRooms } from '@/lib/chatHelpers';
+import {
+  getInitials, fetchMyChatRooms, findExistingGroupChat,
+  fetchProfileNamesForEmails,
+} from '@/lib/chatHelpers';
 
 // ── Online dot ────────────────────────────────────────────────────────────────
 function OnlineDot({ size = 'md' }) {
@@ -32,7 +35,7 @@ function ConversationCard({ room, currentUserEmail, onlineEmails }) {
   const chatName = (() => {
     if (isGroup) return room.name || 'Group Chat';
     const otherIdx = room.participants?.indexOf(currentUserEmail) === 0 ? 1 : 0;
-    return room.participant_names?.[otherIdx] || room.participants?.[otherIdx] || 'Chat';
+    return room.participant_names?.[otherIdx] || 'Hiker';
   })();
 
   // ✅ FIX: Use trip_title field directly instead of brittle string parsing
@@ -122,7 +125,22 @@ export default function Chat() {
   const { data: rooms = [], isLoading } = useQuery({
     queryKey: ['chatrooms', user?.email],
     queryFn: async () => {
-      return fetchMyChatRooms(user.email, { withUnread: true });
+      const rooms = await fetchMyChatRooms(user.email, { withUnread: true });
+      const missingNames = rooms.flatMap(room =>
+        (room.participants || []).filter((email, index) =>
+          !room.participant_names?.[index] ||
+          room.participant_names[index].toLowerCase() === email.toLowerCase()
+        )
+      );
+      const profileNames = await fetchProfileNamesForEmails(missingNames);
+      return rooms.map(room => ({
+        ...room,
+        participant_names: (room.participants || []).map((email, index) => {
+          const existingName = room.participant_names?.[index];
+          return profileNames[email] ||
+            (existingName && existingName.toLowerCase() !== email.toLowerCase() ? existingName : 'Hiker');
+        }),
+      }));
     },
     enabled: !!user?.email,
   });
@@ -161,7 +179,19 @@ export default function Chat() {
     try {
       const participants = [user.email, ...uniqueEmails];
       const onlineByEmail = new Map(onlineUsers.map(u => [u.email, u.name]));
-      const participantNames = [user.full_name || user.email, ...uniqueEmails.map(e => onlineByEmail.get(e) || e)];
+      const participantNames = [user.full_name || 'You', ...uniqueEmails.map(e => onlineByEmail.get(e) || 'Hiker')];
+      const currentRooms = await fetchMyChatRooms(user.email);
+      const existingRoom = findExistingGroupChat(currentRooms, {
+        name: groupForm.name,
+        participants,
+      });
+      if (existingRoom) {
+        setGroupOpen(false);
+        setGroupForm({ name: '', participants: '' });
+        navigate(`/chat/${existingRoom.id}`);
+        return;
+      }
+
       const room = await base44.entities.ChatRoom.create({
         name: groupForm.name.trim(), type: 'group',
         participants, participant_names: participantNames,
@@ -213,12 +243,12 @@ export default function Chat() {
                 <div className="relative">
                   <Avatar className="w-12 h-12 ring-2 ring-white dark:ring-gray-900">
                     <AvatarFallback className="bg-gradient-to-br from-sky-400 to-blue-500 text-white font-bold text-sm">
-                      {getInitials(online.name || online.email)}
+                      {getInitials(online.name || 'Hiker')}
                     </AvatarFallback>
                   </Avatar>
                   <span className="absolute bottom-0 right-0"><OnlineDot size="sm" /></span>
                 </div>
-                <span className="text-[10px] text-gray-500 max-w-[52px] truncate text-center">{online.name?.split(' ')[0]}</span>
+                <span className="text-[10px] text-gray-500 max-w-[52px] truncate text-center">{online.name?.split(' ')[0] || 'Hiker'}</span>
               </div>
             ))}
           </div>

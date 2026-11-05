@@ -1004,7 +1004,7 @@ export default function PublicProfile() {
   const isOwnProfile = currentUser?.id === id;
 
   return (
-    <div className="max-w-2xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
+    <div className="public-profile-page max-w-2xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
 
       {/* ── Profile Header Card (Cinematic) ── */}
       <div className="bg-card border rounded-2xl overflow-hidden mb-4">

@@ -46,4 +46,5 @@ npx cap open android
 
 update sa vercel command: npm run build; vercel --prod
 
-android studio password =  Bhudzray@91 - Bhudzray@90
+Never store Android Studio, signing, or service credentials in this README. Rotate any
+credential that was previously committed here.

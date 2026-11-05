@@ -42,11 +42,11 @@ export default function AdminDashboard() {
             </button>
             <h1 className="font-display text-lg font-bold">Admin Panel</h1>
           </div>
-          <span className="text-xs text-muted-foreground">{user.email}</span>
+          <span className="max-w-[45vw] truncate text-xs text-muted-foreground sm:max-w-none">{user.email}</span>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto flex">
+      <div className="admin-content-shell mx-auto flex max-w-7xl flex-col md:flex-row">
         {/* Sidebar */}
         <aside className="w-56 shrink-0 border-r min-h-[calc(100vh-57px)] p-3 hidden md:block">
           <nav className="space-y-1">
@@ -69,28 +69,29 @@ export default function AdminDashboard() {
         </aside>
 
         {/* Mobile nav */}
-        <div className="md:hidden overflow-x-auto border-b">
-          <div className="flex p-2 gap-1">
+        <nav aria-label="Admin sections" className="sticky top-0 z-20 w-full overflow-x-auto overscroll-x-contain border-b bg-background/95 backdrop-blur md:hidden">
+          <div className="flex min-w-max gap-1 p-2">
             {adminLinks.map(link => {
               const isActive = location.pathname === link.path;
               return (
                 <Link
                   key={link.path}
                   to={link.path}
-                  className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs whitespace-nowrap ${
+                  aria-current={isActive ? 'page' : undefined}
+                  className={`flex min-h-10 items-center gap-1.5 rounded-full px-3 text-xs whitespace-nowrap ${
                     isActive ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
                   }`}
                 >
-                  <link.icon className="w-3 h-3" />
+                  <link.icon className="h-4 w-4" />
                   {link.label}
                 </Link>
               );
             })}
           </div>
-        </div>
+        </nav>
 
         {/* Content */}
-        <main className="flex-1 p-4 md:p-6">
+        <main className="admin-page-content min-w-0 flex-1 p-4 md:p-6">
           <Outlet />
         </main>
       </div>

@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/AuthContext';
 import { Button } from '@/components/ui/button';
 import {
-  TrendingUp, Users, CheckCircle2, Clock,
+  TrendingUp, CheckCircle2,
   AlertCircle, Loader2, Eye, X, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import { format } from 'date-fns';

@@ -7,8 +7,8 @@ android {
         applicationId "com.melotrip.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 9        // ← dagdagan ng 1 bawat update
-        versionName "1.8"    // ← palitan ng bagong version
+        versionCode 15        // ← dagdagan ng 1 bawat update
+        versionName "2.4"    // ← palitan ng bagong version
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'

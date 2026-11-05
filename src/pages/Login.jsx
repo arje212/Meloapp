@@ -4,7 +4,8 @@ import { useAuth } from '@/lib/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Loader2, Compass, Mail, Lock, Eye, EyeOff } from 'lucide-react';
+import BrandLogo from '@/components/BrandLogo';
+import { Loader2, Mail, Lock, Eye, EyeOff } from 'lucide-react';
 
 export default function Login() {
   const { authError } = useAuth();
@@ -21,8 +22,7 @@ export default function Login() {
     if (!email || !password) { setError('Please enter email and password.'); return; }
     setLoading(true);
     setError('');
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    console.log('Login result:', data, error);
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) setError(error.message);
     setLoading(false);
   };
@@ -59,9 +59,7 @@ export default function Login() {
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <div className="w-20 h-20 rounded-full bg-amber-500 flex items-center justify-center mx-auto mb-4 shadow-lg">
-            <Compass className="w-10 h-10 text-white" />
-          </div>
+          <BrandLogo size={84} className="mx-auto mb-4" rounded="xl" />
           <h1 className="font-display text-2xl font-bold">
             Welcome to <span className="text-primary">Melotrip</span>
           </h1>

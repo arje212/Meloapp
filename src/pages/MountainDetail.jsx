@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, MapPin, TrendingUp, Clock, Star, CalendarPlus, Loader2, Navigation, CalendarDays, Users, Package } from 'lucide-react';
 import TrailMap from '@/components/mountains/TrailMap';
+import { isTripExpired } from '@/lib/tripDates';
 
 const difficultyColors = {
   beginner: 'bg-green-100 text-green-700',
@@ -28,7 +29,10 @@ export default function MountainDetail() {
 
   const { data: relatedTrips = [] } = useQuery({
     queryKey: ['mountain-trips', mountain?.name],
-    queryFn: () => base44.entities.Trip.filter({ mountain_name: mountain.name, status: 'open' }, '-created_date', 5),
+    queryFn: async () => {
+      const trips = await base44.entities.Trip.filter({ mountain_name: mountain.name, status: 'open' }, '-created_date', 100);
+      return trips.filter(trip => !isTripExpired(trip)).slice(0, 5);
+    },
     enabled: !!mountain?.name,
   });
 

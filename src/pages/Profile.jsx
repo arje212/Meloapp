@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { Mountain, CalendarDays, MapPin, Settings, LogOut, Loader2, Store, Users, CreditCard, Trophy, Bell, Star, UserCheck, LayoutDashboard, Map, Wallet, Receipt, Camera } from 'lucide-react';
+import { Mountain, CalendarDays, MapPin, Settings, LogOut, Loader2, Store, Users, CreditCard, Trophy, Bell, Star, UserCheck, LayoutDashboard, Map, Wallet, Receipt, Camera, Shield } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import PostCard from '@/components/feed/PostCard';
 import CommentsSheet from '@/components/feed/CommentsSheet';
@@ -25,6 +25,8 @@ const bookingStatusColors = {
   confirmed: 'bg-blue-100 text-blue-800 border-blue-200',
   paid: 'bg-green-100 text-green-800 border-green-200',
   completed: 'bg-primary/10 text-primary border-primary/20',
+  commission_sent: 'bg-primary/10 text-primary border-primary/20',
+  commission_confirmed: 'bg-primary/10 text-primary border-primary/20',
   cancelled: 'bg-red-100 text-red-800 border-red-200',
   refunded: 'bg-gray-100 text-gray-600 border-gray-200',
 };
@@ -243,9 +245,9 @@ export default function Profile() {
         </div>
 
         {/* Action buttons */}
-        <div className="flex gap-2 mt-3 flex-wrap">
+        <div className="flex gap-3 mt-4 flex-wrap">
           <Link to="/notifications">
-            <Button variant="outline" className="rounded-full h-8 text-xs px-3" size="sm">
+            <Button variant="outline" className="rounded-full h-9 text-xs px-3" size="sm">
               <Bell className="w-3.5 h-3.5 mr-1" />
               Notifications
               {unreadNotifs.length > 0 && (
@@ -257,7 +259,7 @@ export default function Profile() {
           </Link>
           <Dialog open={editOpen} onOpenChange={setEditOpen}>
             <DialogTrigger asChild>
-              <Button variant="outline" className="rounded-full h-8 text-xs px-3 flex-1" size="sm">
+              <Button variant="outline" className="rounded-full h-9 text-xs px-3 flex-1" size="sm">
                 <Settings className="w-3.5 h-3.5 mr-1" /> Edit Profile
               </Button>
             </DialogTrigger>
@@ -283,9 +285,16 @@ export default function Profile() {
               </div>
             </DialogContent>
           </Dialog>
-          <Button variant="outline" className="rounded-full h-8 text-xs px-3" size="sm" onClick={() => base44.auth.logout()}>
+          <Button variant="outline" className="rounded-full h-9 text-xs px-3" size="sm" onClick={() => base44.auth.logout()}>
             <LogOut className="w-3.5 h-3.5 mr-1" /> Logout
           </Button>
+          {user?.role === 'admin' && (
+            <Link to="/admin">
+              <Button variant="outline" className="rounded-full h-9 text-xs px-3 border-primary/30 text-primary" size="sm">
+                <Shield className="w-3.5 h-3.5 mr-1" /> Admin Dashboard
+              </Button>
+            </Link>
+          )}
         </div>
 
         {/* Agency shortcut - approved */}
@@ -320,17 +329,16 @@ export default function Profile() {
           </div>
         )}
 
-        {/* Agency role but no registration yet */}
-        {myAgencies.length === 0 && (user?.role === 'agency' || user?.role === 'admin') && (
+        {myAgencies.length === 0 && (
           <div className="mt-3 bg-primary/5 border border-primary/20 rounded-xl p-3 flex items-center gap-3">
             <Store className="w-5 h-5 text-primary shrink-0" />
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium">Register Your Agency</p>
-              <p className="text-xs text-muted-foreground">Set up your agency profile to offer tour packages</p>
+              <p className="text-sm font-medium">Apply as an Agency Owner</p>
+              <p className="text-xs text-muted-foreground">Submit your agency details and verification documents</p>
             </div>
             <Link to="/agency-register">
               <Button size="sm" className="rounded-full text-xs h-7 shrink-0">
-                Register
+                Apply
               </Button>
             </Link>
           </div>
@@ -357,18 +365,18 @@ export default function Profile() {
           navigate('/roadmap');
         }
       }}>
-        <TabsList className="w-full grid grid-cols-7 h-auto p-1">
-          <TabsTrigger value="posts" className="text-xs py-1.5">Posts</TabsTrigger>
-          <TabsTrigger value="saved" className="text-xs py-1.5">Saved</TabsTrigger>
-          <TabsTrigger value="trips" className="text-xs py-1.5">Trips</TabsTrigger>
-          <TabsTrigger value="bookings" className="text-xs py-1.5">Bookings</TabsTrigger>
-          <TabsTrigger value="roadmap" className="text-xs py-1.5">
+        <TabsList className="w-full flex justify-start gap-1 overflow-x-auto h-auto p-1">
+          <TabsTrigger value="posts" className="shrink-0 px-3 text-xs py-2">Posts</TabsTrigger>
+          <TabsTrigger value="saved" className="shrink-0 px-3 text-xs py-2">Saved</TabsTrigger>
+          <TabsTrigger value="trips" className="shrink-0 px-3 text-xs py-2">Trips</TabsTrigger>
+          <TabsTrigger value="bookings" className="shrink-0 px-3 text-xs py-2">Bookings</TabsTrigger>
+          <TabsTrigger value="roadmap" className="shrink-0 px-3 text-xs py-2">
             <Map className="w-3 h-3 sm:mr-1" /><span className="hidden sm:inline">Roadmap</span>
           </TabsTrigger>
-          <TabsTrigger value="following" className="text-xs py-1.5">
+          <TabsTrigger value="following" className="shrink-0 px-3 text-xs py-2">
             <UserCheck className="w-3 h-3 sm:mr-1" /><span className="hidden sm:inline">Following</span>
           </TabsTrigger>
-          <TabsTrigger value="achievements" className="text-xs py-1.5">
+          <TabsTrigger value="achievements" className="shrink-0 px-3 text-xs py-2">
             <Trophy className="w-3 h-3 sm:mr-1" /><span className="hidden sm:inline">Badges</span>
           </TabsTrigger>
         </TabsList>
@@ -470,7 +478,7 @@ export default function Profile() {
                   )}
                 </div>
                 <span className={`text-xs px-2 py-0.5 rounded-full border font-medium capitalize shrink-0 ${bookingStatusColors[b.status] || 'bg-muted text-muted-foreground'}`}>
-                  {b.status}
+                  {b.status === 'commission_sent' ? 'Downpayment Submitted' : b.status === 'commission_confirmed' ? 'completed' : b.status}
                 </span>
               </div>
 

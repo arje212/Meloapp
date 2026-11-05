@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '@/lib/AuthContext';
 import { base44 } from '@/api/base44Client';
-import { commissionConfirmPatch } from '@/lib/commission';
+import { commissionConfirmPatch, notifyAgencyCommissionConfirmed } from '@/lib/commission';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
@@ -13,6 +14,7 @@ import { format } from 'date-fns';
 const getRate = (rate) => rate || 10;
 
 export default function AdminBookings() {
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const [updatingId, setUpdatingId] = useState(null);
 
@@ -59,13 +61,15 @@ export default function AdminBookings() {
     setReceiptDialog(false);
     try {
       await base44.entities.Booking.update(booking.id, patch);
-    } catch {
+      await notifyAgencyCommissionConfirmed({ booking, fromEmail: user?.email });
+    } catch (err) {
       // rollback on error
       patchCache(booking.id, {
         status:               'commission_sent',
         commission_confirmed: false,
         commission_confirmed_date: null,
       });
+      alert('Unable to confirm commission: ' + (err?.message || 'unknown error'));
     }
     setUpdatingId(null);
     queryClient.invalidateQueries({ queryKey: ['admin-bookings'] });

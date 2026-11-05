@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
+import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -18,17 +19,19 @@ import {
   Heart, Star, X, Lock, Camera, ClipboardCheck,
   Upload, Clock, Receipt, Info, Search, UserPlus, UsersRound,
   Image, Flag, Globe, Facebook, Instagram, Phone, MapPin, Sparkles,
-  Wallet,
+  Wallet, FileText,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { format, formatDistanceToNow } from 'date-fns';
 import FinancialSummary from '@/components/agency/FinancialSummary';
 import { uploadFile } from '@/lib/uploadFile';
-import { fetchMyChatRooms } from '@/lib/chatHelpers';
+import { fetchMyChatRooms, findExistingGroupChat, fetchProfileNamesForEmails } from '@/lib/chatHelpers';
+import { uploadAgencyDocument } from '@/lib/agencyDocuments';
 import { ADMIN_GCASH_NUMBER, ADMIN_GCASH_NAME } from '@/lib/config';
 import { isCommissionConfirmed } from '@/lib/commission';
 import { PLAN_COMMISSION, pickActiveSubscription, isSubscriptionExpired, daysUntil, planRank } from '@/lib/plans';
 import AgencyAnalytics from '@/components/agencies/AgencyAnalytics';
+import SharePackageDialog from '@/components/agencies/SharePackageDialog';
 
 
 const PLAN_CONFIG = {
@@ -97,7 +100,7 @@ function GroupChatDialog({ open, onClose, booking, agency, user, navigate }) {
   useEffect(() => {
     if (booking) {
       setGroupName(`${booking.package_title} – ${booking.travel_date || 'Group'}`);
-      setInvited([{ email: booking.user_email, name: booking.user_name || booking.user_email }]);
+      setInvited([{ email: booking.user_email, name: booking.user_name || 'Hiker' }]);
     }
   }, [booking]);
 
@@ -105,19 +108,22 @@ function GroupChatDialog({ open, onClose, booking, agency, user, navigate }) {
     if (!searchQuery.trim()) return;
     setSearching(true); setError('');
     try {
-      const [byName, byEmail] = await Promise.all([
-        base44.entities.User.filter({ full_name: searchQuery.trim() }).catch(() => []),
-        base44.entities.User.filter({ email: searchQuery.trim() }).catch(() => []),
-      ]);
-      const combined = [...new Map([...byName, ...byEmail].map(u => [u.email, u])).values()];
-      setSearchResults(combined.filter(u => u.email !== user.email && !invited.find(i => i.email === u.email)));
+      const { data: byName, error: searchError } = await supabase
+        .from('profiles')
+        .select('id, full_name, email, avatar_url')
+        .ilike('full_name', `%${searchQuery.trim()}%`)
+        .limit(20);
+      if (searchError) throw searchError;
+      setSearchResults((byName || []).filter(u =>
+        u.full_name && u.email !== user.email && !invited.find(i => i.email === u.email)
+      ));
     } catch { setError('Search failed. Try again.'); }
     finally { setSearching(false); }
   };
 
   const addMember = (u) => {
     if (invited.find(i => i.email === u.email)) return;
-    setInvited(p => [...p, { email: u.email, name: u.full_name || u.email }]);
+    setInvited(p => [...p, { email: u.email, name: u.full_name || 'Hiker' }]);
     setSearchResults(p => p.filter(r => r.email !== u.email));
   };
   const removeMember = (email) => {
@@ -130,9 +136,23 @@ function GroupChatDialog({ open, onClose, booking, agency, user, navigate }) {
     if (invited.length === 0) { setError('Add at least one member.'); return; }
     setCreating(true); setError('');
     try {
+      const participants = [...new Set([user.email, ...invited.map(i => i.email)])];
+      const existingRooms = await fetchMyChatRooms(user.email);
+      const existingRoom = findExistingGroupChat(existingRooms, {
+        name: groupName,
+        participants,
+        bookingId: booking?.id,
+      });
+      if (existingRoom) {
+        qc.invalidateQueries({ queryKey: ['agency-chats'] });
+        onClose();
+        navigate(`/chat/${existingRoom.id}`);
+        return;
+      }
+
       const room = await base44.entities.ChatRoom.create({
         name: groupName.trim(), type: 'group',
-        participants: [user.email, ...invited.map(i => i.email)],
+        participants,
         participant_names: [agency.name, ...invited.map(i => i.name)],
         agency_id: agency.id, booking_id: booking?.id || undefined,
         package_title: booking?.package_title || undefined,
@@ -147,7 +167,7 @@ function GroupChatDialog({ open, onClose, booking, agency, user, navigate }) {
 
   const handleClose = () => {
     setGroupName(''); setSearchQuery(''); setSearchResults([]);
-    setInvited(booking ? [{ email: booking.user_email, name: booking.user_name || booking.user_email }] : []);
+    setInvited(booking ? [{ email: booking.user_email, name: booking.user_name || 'Hiker' }] : []);
     setError(''); onClose();
   };
 
@@ -172,8 +192,8 @@ function GroupChatDialog({ open, onClose, booking, agency, user, navigate }) {
               </div>
               {invited.map(m => (
                 <div key={m.email} className="flex items-center gap-2 bg-muted rounded-xl px-3 py-2">
-                  <div className="w-7 h-7 rounded-full bg-green-100 flex items-center justify-center shrink-0"><span className="text-xs font-bold text-green-700">{(m.name || m.email)[0].toUpperCase()}</span></div>
-                  <div className="flex-1 min-w-0"><p className="text-xs font-medium truncate">{m.name}</p><p className="text-[10px] text-muted-foreground truncate">{m.email}</p></div>
+                  <div className="w-7 h-7 rounded-full bg-green-100 flex items-center justify-center shrink-0"><span className="text-xs font-bold text-green-700">{(m.name || 'Hiker')[0].toUpperCase()}</span></div>
+                  <div className="flex-1 min-w-0"><p className="text-xs font-medium truncate">{m.name}</p></div>
                   {booking && m.email === booking.user_email ? <Badge variant="outline" className="text-[9px] h-4 px-1 shrink-0">booker</Badge> : <button onClick={() => removeMember(m.email)} className="text-muted-foreground hover:text-destructive shrink-0"><X className="w-3.5 h-3.5" /></button>}
                 </div>
               ))}
@@ -182,15 +202,15 @@ function GroupChatDialog({ open, onClose, booking, agency, user, navigate }) {
           <div>
             <Label className="text-xs text-muted-foreground mb-2 block">Invite More Participants</Label>
             <div className="flex gap-2">
-              <Input placeholder="Search by name or email..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSearch()} className="flex-1 text-sm" />
+              <Input placeholder="Search by name..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSearch()} className="flex-1 text-sm" />
               <Button size="sm" variant="outline" onClick={handleSearch} disabled={searching || !searchQuery.trim()} className="rounded-xl shrink-0">{searching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}</Button>
             </div>
             {searchResults.length > 0 && (
               <div className="mt-2 border rounded-xl divide-y overflow-hidden">
                 {searchResults.map(u => (
                   <div key={u.email} className="flex items-center gap-2 px-3 py-2 hover:bg-muted transition-colors">
-                    <div className="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center shrink-0"><span className="text-xs font-bold text-blue-700">{(u.full_name || u.email)[0].toUpperCase()}</span></div>
-                    <div className="flex-1 min-w-0"><p className="text-xs font-medium truncate">{u.full_name || '—'}</p><p className="text-[10px] text-muted-foreground truncate">{u.email}</p></div>
+                    <div className="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center shrink-0"><span className="text-xs font-bold text-blue-700">{u.full_name[0].toUpperCase()}</span></div>
+                    <div className="flex-1 min-w-0"><p className="text-xs font-medium truncate">{u.full_name}</p></div>
                     <button onClick={() => addMember(u)} className="flex items-center gap-1 text-xs text-primary border border-primary/30 rounded-lg px-2 py-1 hover:bg-primary/5 transition-colors shrink-0"><UserPlus className="w-3 h-3" /> Add</button>
                   </div>
                 ))}
@@ -223,6 +243,7 @@ export default function AgencyDashboard() {
 
   const [pkgDialog,  setPkgDialog]  = useState(false);
   const [editPkg,    setEditPkg]    = useState(null);
+  const [sharePackage, setSharePackage] = useState(null);
   const [tripDialog, setTripDialog] = useState(false);
   const [postDialog, setPostDialog] = useState(false);
   const [saving,     setSaving]     = useState(false);
@@ -230,7 +251,7 @@ export default function AgencyDashboard() {
   const [uploadingPromo, setUploadingPromo] = useState(false);
 
   const [editProfileDialog,   setEditProfileDialog]   = useState(false);
-  const [profileForm,         setProfileForm]         = useState({ logo_url: '', cover_url: '', gallery_photos: [], description: '', location: '', contact_phone: '', website: '', facebook_url: '', instagram_url: '', years_operating: '', gcash_number: '', gcash_name: '' });
+  const [profileForm,         setProfileForm]         = useState({ logo_url: '', cover_url: '', gallery_photos: [], description: '', location: '', contact_phone: '', website: '', facebook_url: '', instagram_url: '', years_operating: '', gcash_number: '', gcash_name: '', business_reg_document_path: '', permit_document_path: '' });
   const [uploadingProfileImg, setUploadingProfileImg] = useState(null);
   const [profileTab,          setProfileTab]          = useState('images');
 
@@ -284,14 +305,17 @@ export default function AgencyDashboard() {
     queryKey: ['agency-bookings', agency?.id],
     queryFn:  () => base44.entities.Booking.filter({ agency_id: agency.id }, '-created_date', 1000),
     enabled:  !!agency?.id,
+    refetchInterval: 30_000,
   });
 
   const { data: trips = [] } = useQuery({
     queryKey: ['agency-trips', agency?.id],
     queryFn: async () => {
       const [byAgency, byOrganizer] = await Promise.all([
-        base44.entities.Trip.filter({ agency_id: agency.id }, '-created_at').catch(() => []),
-        base44.entities.Trip.filter({ organizer_id: user.id }, '-created_at').catch(() => []),
+        // trips has no agency_id column (it has agency_name) and no created_at (it has created_date);
+        // the old filters always failed and the error was swallowed, so this list was always empty
+        base44.entities.Trip.filter({ agency_name: agency.name }, '-created_date').catch(() => []),
+        base44.entities.Trip.filter({ organizer_id: user.id }, '-created_date').catch(() => []),
       ]);
       return [...new Map([...byAgency, ...byOrganizer].map(t => [t.id, t])).values()]
         .filter(t => t.agency_id === agency.id || t.agency_name === agency.name || t.organizer_id === user.id);
@@ -308,7 +332,22 @@ export default function AgencyDashboard() {
   const { data: chatRooms = [] } = useQuery({
     queryKey: ['agency-chats', user?.email],
     queryFn: async () => {
-      return fetchMyChatRooms(user.email);
+      const rooms = await fetchMyChatRooms(user.email);
+      const missingNames = rooms.flatMap(room =>
+        (room.participants || []).filter((email, index) =>
+          !room.participant_names?.[index] ||
+          room.participant_names[index].toLowerCase() === email.toLowerCase()
+        )
+      );
+      const profileNames = await fetchProfileNamesForEmails(missingNames);
+      return rooms.map(room => ({
+        ...room,
+        participant_names: (room.participants || []).map((email, index) => {
+          const existingName = room.participant_names?.[index];
+          return profileNames[email] ||
+            (existingName && existingName.toLowerCase() !== email.toLowerCase() ? existingName : 'Hiker');
+        }),
+      }));
     },
     enabled: !!user?.email,
   });
@@ -358,16 +397,35 @@ export default function AgencyDashboard() {
     finally { setUploadingProfileImg(null); }
   };
 
+  const handleAgencyDocumentUpload = async (file, field) => {
+    if (!file) return;
+    setUploadingProfileImg(field);
+    setSaveError('');
+    try {
+      const path = await uploadAgencyDocument(file, user.id, agency.id);
+      setProfileForm(current => ({ ...current, [field]: path }));
+    } catch (err) {
+      setSaveError(err.message || 'Agency document upload failed.');
+    } finally {
+      setUploadingProfileImg(null);
+    }
+  };
+
   const handleSaveProfile = async () => {
     setSaving(true); setSaveError('');
     try {
       const updates = {};
-      const fields = ['logo_url','cover_url','gallery_photos','description','location','contact_phone','website','facebook_url','instagram_url','years_operating','gcash_number','gcash_name'];
+      const fields = ['logo_url','cover_url','gallery_photos','description','location','contact_phone','website','facebook_url','instagram_url','years_operating','gcash_number','gcash_name','business_reg_document_path','permit_document_path'];
       fields.forEach(f => { if (profileForm[f] !== undefined && profileForm[f] !== '') updates[f] = profileForm[f]; });
       if (profileForm.years_operating) updates.years_operating = Number(profileForm.years_operating);
       
       try {
-        await base44.entities.Agency.update(agency.id, updates);
+        const updatedAgency = await base44.entities.Agency.update(agency.id, updates);
+        for (const field of ['business_reg_document_path', 'permit_document_path']) {
+          if (updates[field] !== undefined && !Object.prototype.hasOwnProperty.call(updatedAgency || {}, field)) {
+            throw new Error('Agency document storage is not configured. Ask an administrator to apply the latest database migration.');
+          }
+        }
       } catch (updateErr) {
         // If update fails with column-missing error, try without gcash fields
         const errMsg = `${updateErr?.message || ''} ${updateErr?.details || ''}`;
@@ -605,7 +663,7 @@ export default function AgencyDashboard() {
   };
 
   const openEditProfile = () => {
-    setProfileForm({ logo_url: agency.logo_url || '', cover_url: agency.cover_url || '', gallery_photos: agency.gallery_photos || [], description: agency.description || '', location: agency.location || '', contact_phone: agency.contact_phone || '', website: agency.website || '', facebook_url: agency.facebook_url || '', instagram_url: agency.instagram_url || '', years_operating: String(agency.years_operating || ''), gcash_number: agency.gcash_number || '', gcash_name: agency.gcash_name || '' });
+    setProfileForm({ logo_url: agency.logo_url || '', cover_url: agency.cover_url || '', gallery_photos: agency.gallery_photos || [], description: agency.description || '', location: agency.location || '', contact_phone: agency.contact_phone || '', website: agency.website || '', facebook_url: agency.facebook_url || '', instagram_url: agency.instagram_url || '', years_operating: String(agency.years_operating || ''), gcash_number: agency.gcash_number || '', gcash_name: agency.gcash_name || '', business_reg_document_path: agency.business_reg_document_path || '', permit_document_path: agency.permit_document_path || '' });
     setProfileTab('images'); setSaveError(''); setEditProfileDialog(true);
   };
 
@@ -675,18 +733,18 @@ export default function AgencyDashboard() {
       {saveError && <div className="mb-4 flex gap-2 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />{saveError}</div>}
 
       <Tabs defaultValue="bookings">
-        <TabsList className="w-full grid grid-cols-6 h-auto p-1 mb-4">
-          <TabsTrigger value="marketing" className="text-xs py-1.5"><Megaphone className="w-3 h-3 sm:mr-1" /><span className="hidden sm:inline">Market</span></TabsTrigger>
-          <TabsTrigger value="banners" className="text-xs py-1.5"><Flag className="w-3 h-3 sm:mr-1" /><span className="hidden sm:inline">Banners</span></TabsTrigger>
-          <TabsTrigger value="finance" className="text-xs py-1.5"><TrendingUp className="w-3 h-3 sm:mr-1" /><span className="hidden sm:inline">Finance</span></TabsTrigger>
-          <TabsTrigger value="bookings" className="text-xs py-1.5 relative">
+        <TabsList className="w-full flex h-auto justify-start gap-1 overflow-x-auto p-1 mb-4">
+          <TabsTrigger value="marketing" className="shrink-0 px-3 text-xs py-2"><Megaphone className="w-3 h-3 sm:mr-1" /><span className="hidden sm:inline">Market</span></TabsTrigger>
+          <TabsTrigger value="banners" className="shrink-0 px-3 text-xs py-2"><Flag className="w-3 h-3 sm:mr-1" /><span className="hidden sm:inline">Banners</span></TabsTrigger>
+          <TabsTrigger value="finance" className="shrink-0 px-3 text-xs py-2"><TrendingUp className="w-3 h-3 sm:mr-1" /><span className="hidden sm:inline">Finance</span></TabsTrigger>
+          <TabsTrigger value="bookings" className="relative shrink-0 px-3 text-xs py-2">
             Bookings
             {(pendingReceiptCount + pendingDpReceiptCount) > 0 && (
               <span className="absolute -top-1 -right-1 w-4 h-4 bg-orange-500 text-white text-[9px] rounded-full flex items-center justify-center font-bold">{pendingReceiptCount + pendingDpReceiptCount}</span>
             )}
           </TabsTrigger>
-          <TabsTrigger value="packages" className="text-xs py-1.5">Packages</TabsTrigger>
-          <TabsTrigger value="messages" className="text-xs py-1.5">Chats</TabsTrigger>
+          <TabsTrigger value="packages" className="shrink-0 px-3 text-xs py-2">Packages</TabsTrigger>
+          <TabsTrigger value="messages" className="shrink-0 px-3 text-xs py-2">Chats</TabsTrigger>
         </TabsList>
 
         {/* MARKETING */}
@@ -892,23 +950,23 @@ export default function AgencyDashboard() {
                     </div>
                   )}
                   <div className="flex gap-2">
-                    <Button size="sm" className="rounded-full h-7 text-xs flex-1" disabled={!!b.use_downpayment && !b.dp_receipt_url} onClick={() => handleUpdateBooking(b.id, 'confirmed')}><CheckCircle className="w-3 h-3 mr-1" /> Confirm</Button>
-                    <Button size="sm" variant="outline" className="rounded-full h-7 text-xs flex-1" onClick={() => handleUpdateBooking(b.id, 'cancelled')}><XCircle className="w-3 h-3 mr-1" /> Decline</Button>
+                    <Button size="sm" className="rounded-full h-9 text-xs flex-1" disabled={!!b.use_downpayment && !b.dp_receipt_url} onClick={() => handleUpdateBooking(b.id, 'confirmed')}><CheckCircle className="w-3 h-3 mr-1" /> Confirm</Button>
+                    <Button size="sm" variant="outline" className="rounded-full h-9 text-xs flex-1" onClick={() => handleUpdateBooking(b.id, 'cancelled')}><XCircle className="w-3 h-3 mr-1" /> Decline</Button>
                   </div>
                 </div>
               )}
 
               {b.status === 'confirmed' && (
                 <div className="space-y-2">
-                  <Button size="sm" variant="outline" className="rounded-full h-7 text-xs w-full border-primary/30 text-primary hover:bg-primary/5" onClick={() => { setGroupChatBooking(b); setGroupChatDialog(true); }}><UsersRound className="w-3 h-3 mr-1" /> Create Group Chat</Button>
-                  <Button size="sm" className="rounded-full h-7 text-xs w-full bg-green-600 hover:bg-green-700" onClick={() => openCompletionDialog(b)}><ClipboardCheck className="w-3 h-3 mr-1" /> Mark as Completed</Button>
+                  <Button size="sm" variant="outline" className="rounded-full h-9 text-xs w-full border-primary/30 text-primary hover:bg-primary/5" onClick={() => { setGroupChatBooking(b); setGroupChatDialog(true); }}><UsersRound className="w-3 h-3 mr-1" /> Create Group Chat</Button>
+                  <Button size="sm" className="rounded-full h-9 text-xs w-full bg-green-600 hover:bg-green-700" onClick={() => openCompletionDialog(b)}><ClipboardCheck className="w-3 h-3 mr-1" /> Mark as Completed</Button>
                 </div>
               )}
 
               {b.status === 'completed' && !isCommissionConfirmed(b) && (
                 <div className="space-y-2">
-                  <Button size="sm" variant="outline" className="rounded-full h-7 text-xs w-full border-primary/30 text-primary hover:bg-primary/5" onClick={() => { setGroupChatBooking(b); setGroupChatDialog(true); }}><UsersRound className="w-3 h-3 mr-1" /> Create Group Chat</Button>
-                  <Button size="sm" className="rounded-full h-7 text-xs w-full bg-blue-600 hover:bg-blue-700" onClick={() => openReceiptDialog(b)}><Upload className="w-3 h-3 mr-1" /> Send GCash Commission Receipt</Button>
+                  <Button size="sm" variant="outline" className="rounded-full h-9 text-xs w-full border-primary/30 text-primary hover:bg-primary/5" onClick={() => { setGroupChatBooking(b); setGroupChatDialog(true); }}><UsersRound className="w-3 h-3 mr-1" /> Create Group Chat</Button>
+                  <Button size="sm" className="rounded-full h-9 text-xs w-full bg-blue-600 hover:bg-blue-700" onClick={() => openReceiptDialog(b)}><Upload className="w-3 h-3 mr-1" /> Send GCash Commission Receipt</Button>
                 </div>
               )}
             </div>
@@ -939,6 +997,7 @@ export default function AgencyDashboard() {
                 </div>
               </div>
               <div className="flex flex-col gap-1 shrink-0">
+                {(!pkg.status || pkg.status === 'active') && <Button size="sm" variant="outline" aria-label={`Share ${pkg.title} to Feed`} title="Share package to Feed" className="h-7 rounded-lg px-2 text-primary" onClick={() => setSharePackage(pkg)}><Megaphone className="h-3.5 w-3.5" /></Button>}
                 <Button size="sm" variant="outline" className="h-7 text-xs rounded-lg" onClick={() => openEditPkg(pkg)}><Edit className="w-3 h-3" /></Button>
                 <Button size="sm" variant="outline" className="h-7 text-xs rounded-lg text-destructive" onClick={async () => { await base44.entities.TourPackage.delete(pkg.id); qc.invalidateQueries({ queryKey: ['agency-packages'] }); }}><Trash2 className="w-3 h-3" /></Button>
               </div>
@@ -951,7 +1010,7 @@ export default function AgencyDashboard() {
           {chatRooms.length === 0 ? <EmptyState icon={MessageCircle} msg="No conversations yet." /> : chatRooms.map(room => {
             const isGroup  = room.is_group || room.type === 'group';
             const otherIdx = room.participants?.indexOf(user.email) === 0 ? 1 : 0;
-            const name     = isGroup ? (room.name || 'Group Chat') : (room.participant_names?.[otherIdx] || room.participants?.[otherIdx] || 'User');
+            const name     = isGroup ? (room.name || 'Group Chat') : (room.participant_names?.[otherIdx] || 'Hiker');
             return (
               <Link key={room.id} to={`/chat/${room.id}`} className="block">
                 <div className="flex items-center gap-3 p-3 bg-card border rounded-xl hover:bg-muted transition-colors">
@@ -970,6 +1029,7 @@ export default function AgencyDashboard() {
 
       {/* DIALOGS */}
       <GroupChatDialog open={groupChatDialog} onClose={() => { setGroupChatDialog(false); setGroupChatBooking(null); }} booking={groupChatBooking} agency={agency} user={user} navigate={navigate} />
+      {sharePackage && agency && user && <SharePackageDialog pkg={sharePackage} agency={agency} user={user} onClose={() => setSharePackage(null)} />}
 
       {/* Banner Dialog */}
       <Dialog open={bannerDialog} onOpenChange={v => { if (!saving) { setBannerDialog(v); if (!v) setSaveError(''); } }}>
@@ -1026,6 +1086,53 @@ export default function AgencyDashboard() {
               <div><Label>Website</Label><div className="relative mt-1"><Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" /><Input className="pl-9" value={profileForm.website} onChange={e => setProfileForm(p => ({ ...p, website: e.target.value }))} placeholder="https://yourwebsite.com" /></div></div>
               <div><Label>Facebook Page URL</Label><div className="relative mt-1"><Facebook className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" /><Input className="pl-9" value={profileForm.facebook_url} onChange={e => setProfileForm(p => ({ ...p, facebook_url: e.target.value }))} placeholder="https://facebook.com/yourpage" /></div></div>
               <div><Label>Instagram URL</Label><div className="relative mt-1"><Instagram className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" /><Input className="pl-9" value={profileForm.instagram_url} onChange={e => setProfileForm(p => ({ ...p, instagram_url: e.target.value }))} placeholder="https://instagram.com/yourhandle" /></div></div>
+
+              <div className="rounded-xl border border-primary/20 bg-primary/5 p-3.5 space-y-3">
+                <div>
+                  <p className="text-sm font-semibold">Verification documents</p>
+                  <p className="text-[11px] text-muted-foreground mt-1">Private files visible only to your account and Melotrip admins. PDF, JPG, PNG, or WebP up to 10MB.</p>
+                </div>
+                {[
+                  { field: 'business_reg_document_path', label: 'Business Registration' },
+                  { field: 'permit_document_path', label: 'DOLE / Operating Permit' },
+                ].map(({ field, label }) => (
+                  <div key={field} className="flex items-center gap-3 rounded-lg border bg-background p-3">
+                    <FileText className="w-5 h-5 text-primary shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium">{label}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {profileForm[field] ? 'Document uploaded' : 'Not submitted'}
+                      </p>
+                    </div>
+                    <label className="inline-flex items-center gap-1.5 rounded-full border px-3 py-2 text-xs font-medium cursor-pointer hover:bg-muted shrink-0">
+                      {uploadingProfileImg === field
+                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        : <Upload className="w-3.5 h-3.5" />}
+                      {profileForm[field] ? 'Replace' : 'Upload'}
+                      <input
+                        type="file"
+                        accept=".pdf,image/jpeg,image/png,image/webp"
+                        className="hidden"
+                        disabled={!!uploadingProfileImg}
+                        onChange={event => {
+                          handleAgencyDocumentUpload(event.target.files?.[0], field);
+                          event.target.value = '';
+                        }}
+                      />
+                    </label>
+                    {profileForm[field] && (
+                      <button
+                        type="button"
+                        className="text-muted-foreground hover:text-destructive"
+                        aria-label={`Remove ${label}`}
+                        onClick={() => setProfileForm(current => ({ ...current, [field]: null }))}
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
 
               {/* GCash Payment Account */}
               <div className="rounded-xl border border-blue-200 bg-blue-50 p-3.5 space-y-3">

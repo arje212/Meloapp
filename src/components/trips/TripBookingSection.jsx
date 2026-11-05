@@ -62,7 +62,7 @@ export default function TripBookingSection({ trip }) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('bookings')
-        .select('package_id')
+        .select('package_id, status')
         .eq('user_email', user.email);
       if (error) throw error;
       return data;
@@ -70,7 +70,11 @@ export default function TripBookingSection({ trip }) {
     enabled: !!user?.email,
   });
 
-  const bookedPackageIds = new Set(myBookings.map(b => b.package_id));
+  const bookedPackageIds = new Set(
+    myBookings
+      .filter(b => !['cancelled', 'refunded'].includes(b.status))
+      .map(b => b.package_id)
+  );
 
   const getCommissionRate = (agencyId) =>
     rateForPlan(pickActiveSubscription(subs.filter(s => s.agency_id === agencyId))?.plan);
@@ -79,8 +83,12 @@ export default function TripBookingSection({ trip }) {
     if (!bookingPkg || isBooking) return;
     setFormError('');
     const travelDate = bookForm.travel_date || trip.start_date || '';
-    const numPax = Number(bookForm.num_pax) || 1;
+    const numPax = Number(bookForm.num_pax);
 
+    if (!Number.isSafeInteger(numPax) || numPax < 1) {
+      setFormError('Number of participants must be a positive whole number.');
+      return;
+    }
     if (bookingPkg.max_pax && numPax > bookingPkg.max_pax) {
       setFormError(`Maximum ${bookingPkg.max_pax} participants allowed.`);
       return;
@@ -95,15 +103,13 @@ export default function TripBookingSection({ trip }) {
           .select('num_pax, status')
           .eq('package_id', bookingPkg.id)
           .eq('travel_date', travelDate);
-        if (!slotErr && sameDay) {
-          const taken = sameDay
-            .filter(b => b.status !== 'cancelled')
-            .reduce((sum, b) => sum + (Number(b.num_pax) || 1), 0);
-          if (taken + numPax > bookingPkg.max_pax) {
-            setFormError(`Only ${Math.max(0, bookingPkg.max_pax - taken)} slot(s) left for this date.`);
-            setIsBooking(false);
-            return;
-          }
+        if (slotErr) throw slotErr;
+        const taken = (sameDay || [])
+          .filter(b => !['cancelled', 'refunded'].includes(b.status))
+          .reduce((sum, b) => sum + (Number(b.num_pax) || 1), 0);
+        if (taken + numPax > bookingPkg.max_pax) {
+          setFormError(`Only ${Math.max(0, bookingPkg.max_pax - taken)} slot(s) left for this date.`);
+          return;
         }
       }
 

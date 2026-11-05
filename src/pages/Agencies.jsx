@@ -23,10 +23,26 @@ export default function Agencies() {
     queryKey: ['packages'],
     queryFn: () => base44.entities.TourPackage.filter({ status: 'active' }, '-created_date', 1000),
   });
+  const packagesByAgency = packages.reduce((grouped, pkg) => {
+    const agencyPackages = grouped.get(pkg.agency_id) || [];
+    agencyPackages.push(pkg);
+    grouped.set(pkg.agency_id, agencyPackages);
+    return grouped;
+  }, new Map());
+  const searchTerm = search.trim().toLowerCase();
 
   // Paid plans are listed first (Yearly > Pro > Starter > Free), then by rating.
   const filtered = agencies
-    .filter(a => !search || a.name?.toLowerCase().includes(search.toLowerCase()) || a.location?.toLowerCase().includes(search.toLowerCase()))
+    .filter(agency => {
+      if (!searchTerm) return true;
+      const agencyMatches = [agency.name, agency.location]
+        .some(value => String(value || '').toLowerCase().includes(searchTerm));
+      const packageMatches = (packagesByAgency.get(agency.id) || []).some(pkg =>
+        [pkg.title, pkg.mountain_name, pkg.description, pkg.nature_spots]
+          .some(value => String(value || '').toLowerCase().includes(searchTerm))
+      );
+      return agencyMatches || packageMatches;
+    })
     .sort((a, b) => planRank(plans[b.id]) - planRank(plans[a.id]) || (Number(b.rating) || 0) - (Number(a.rating) || 0));
 
   return (
@@ -38,7 +54,7 @@ export default function Agencies() {
 
       <div className="relative mb-6">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <Input placeholder="Search agencies..." value={search} onChange={e => setSearch(e.target.value)} className="pl-10 rounded-full" />
+        <Input placeholder="Search agencies, packages, or destinations..." value={search} onChange={e => setSearch(e.target.value)} className="pl-10 rounded-full" />
       </div>
 
       {isLoading ? (
@@ -52,7 +68,7 @@ export default function Agencies() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map(agency => {
-            const agencyPackages = packages.filter(p => p.agency_id === agency.id);
+            const agencyPackages = packagesByAgency.get(agency.id) || [];
             return (
               <Link key={agency.id} to={`/agencies/${agency.id}`}>
                 <div className="bg-card border rounded-2xl overflow-hidden hover:shadow-md transition-all">

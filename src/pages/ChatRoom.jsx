@@ -19,6 +19,7 @@ import { format } from 'date-fns';
 import {
   parseContent, buildContent, buildVoiceContent,
   dateSeparatorLabel, shouldShowSeparator, getInitials, REACTIONS_LIST,
+  hydrateRoomParticipantNames,
 } from '@/lib/chatHelpers';
 
 // ─── Typing indicator ─────────────────────────────────────────────────────────
@@ -163,7 +164,7 @@ function ReplyPreviewStrip({ replyMsg, onCancel }) {
     <div className="flex items-start gap-2 px-4 py-2 bg-blue-50 dark:bg-blue-900/20 border-t border-blue-100 dark:border-blue-900/40">
       <div className="w-0.5 h-full min-h-[28px] bg-blue-400 rounded-full shrink-0 self-stretch" />
       <div className="flex-1 min-w-0">
-        <p className="text-[11px] font-semibold text-blue-500 mb-0.5">{replyMsg.sender_name || replyMsg.sender_email}</p>
+        <p className="text-[11px] font-semibold text-blue-500 mb-0.5">{replyMsg.sender_name || 'Hiker'}</p>
         <p className="text-xs text-gray-500 truncate">{text || '📷 Media'}</p>
       </div>
       <button onClick={onCancel} className="text-gray-400 hover:text-gray-600 transition-colors mt-0.5 shrink-0">
@@ -401,7 +402,7 @@ function MessageBubble({ msg, isMe, isFirst, isLast, isGroup, isPinned, canPin, 
           {isLast && (
             <Avatar className="w-7 h-7">
               <AvatarFallback className="text-[10px] font-bold bg-gradient-to-br from-sky-400 to-blue-500 text-white">
-                {getInitials(msg.sender_name || msg.sender_email)}
+                {getInitials(msg.sender_name || 'Hiker')}
               </AvatarFallback>
             </Avatar>
           )}
@@ -411,7 +412,7 @@ function MessageBubble({ msg, isMe, isFirst, isLast, isGroup, isPinned, canPin, 
       <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[72%]`} style={{ minWidth: 0 }}>
         {showName && (
           <p className="text-[10px] text-gray-400 mb-1 ml-1 font-medium">
-            {msg.sender_name || msg.sender_email}
+            {msg.sender_name || 'Hiker'}
           </p>
         )}
 
@@ -425,7 +426,7 @@ function MessageBubble({ msg, isMe, isFirst, isLast, isGroup, isPinned, canPin, 
         {/* Reply context */}
         {repliedMsg && repliedContent && (
           <div className={`mb-1 px-2.5 py-1.5 rounded-xl text-xs border-l-2 border-blue-400 bg-gray-100 dark:bg-gray-800 max-w-full ${isMe ? 'mr-1' : 'ml-1'}`}>
-            <p className="font-semibold text-blue-500 text-[10px] mb-0.5">{repliedMsg.sender_name || repliedMsg.sender_email}</p>
+            <p className="font-semibold text-blue-500 text-[10px] mb-0.5">{repliedMsg.sender_name || 'Hiker'}</p>
             <p className="text-gray-500 truncate">{repliedContent.text || '📷 Media'}</p>
           </div>
         )}
@@ -561,11 +562,14 @@ function MembersDialog({ open, onOpenChange, room, currentUserEmail, qc, roomId 
     if (!searchQuery.trim()) return;
     setSearching(true); setMemberError('');
     try {
-      const byName = await base44.entities.User.filter({ full_name: searchQuery.trim() });
-      const byEmail = await base44.entities.User.filter({ email: searchQuery.trim() });
-      const combined = [...new Map([...byName, ...byEmail].map(u => [u.email, u])).values()];
+      const { data: byName, error } = await supabase
+        .from('profiles')
+        .select('id, full_name, email, avatar_url')
+        .ilike('full_name', `%${searchQuery.trim()}%`)
+        .limit(20);
+      if (error) throw error;
       const existing = room?.participants || [];
-      setSearchResults(combined.filter(u => !existing.includes(u.email)));
+      setSearchResults((byName || []).filter(u => u.full_name && !existing.includes(u.email)));
     } catch { setMemberError('Search failed.'); }
     finally { setSearching(false); }
   };
@@ -575,7 +579,7 @@ function MembersDialog({ open, onOpenChange, room, currentUserEmail, qc, roomId 
     try {
       await base44.entities.ChatRoom.update(roomId, {
         participants: [...(room.participants || []), u.email],
-        participant_names: [...(room.participant_names || []), u.full_name || u.email],
+        participant_names: [...(room.participant_names || []), u.full_name || 'Hiker'],
       });
       setSearchResults(prev => prev.filter(r => r.email !== u.email));
       qc.invalidateQueries({ queryKey: ['chatroom', roomId] });
@@ -612,7 +616,7 @@ function MembersDialog({ open, onOpenChange, room, currentUserEmail, qc, roomId 
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Members ({room?.participants?.length || 0})</p>
             <div className="space-y-1.5">
               {(room?.participants || []).map((email, idx) => {
-                const name = room?.participant_names?.[idx] || email;
+                const name = room?.participant_names?.[idx] || 'Hiker';
                 const isMe = email === currentUserEmail;
                 const isAdmin = room?.created_by === email || idx === 0;
                 return (
@@ -624,7 +628,6 @@ function MembersDialog({ open, onOpenChange, room, currentUserEmail, qc, roomId 
                     </Avatar>
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-semibold truncate">{name}{isMe ? ' (you)' : ''}</p>
-                      <p className="text-[10px] text-gray-400 truncate">{email}</p>
                     </div>
                     {isAdmin && <span className="text-[9px] px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-500 rounded-full shrink-0 font-semibold">admin</span>}
                     {!isMe && !isAdmin && (
@@ -641,7 +644,7 @@ function MembersDialog({ open, onOpenChange, room, currentUserEmail, qc, roomId 
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Add Member</p>
             <div className="flex gap-2">
               <Input
-                placeholder="Name or email..."
+                placeholder="Search by name..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleSearch()}
@@ -657,12 +660,11 @@ function MembersDialog({ open, onOpenChange, room, currentUserEmail, qc, roomId 
                   <div key={u.email} className="flex items-center gap-2.5 px-3 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
                     <Avatar className="w-7 h-7 shrink-0">
                       <AvatarFallback className="text-xs font-bold bg-blue-100 text-blue-600">
-                        {getInitials(u.full_name || u.email)}
+                        {getInitials(u.full_name || 'Hiker')}
                       </AvatarFallback>
                     </Avatar>
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium truncate">{u.full_name || '—'}</p>
-                      <p className="text-[10px] text-gray-400 truncate">{u.email}</p>
+                      <p className="text-xs font-medium truncate">{u.full_name}</p>
                     </div>
                     <button onClick={() => handleAdd(u)} disabled={addingMember} className="flex items-center gap-1 text-xs text-blue-500 border border-blue-200 rounded-lg px-2.5 py-1 hover:bg-blue-50 transition-colors shrink-0">
                       {addingMember ? <Loader2 className="w-3 h-3 animate-spin" /> : <UserPlus className="w-3 h-3" />} Add
@@ -718,7 +720,10 @@ export default function ChatRoom() {
   // ── Queries ────────────────────────────────────────────────────────────────
   const { data: room } = useQuery({
     queryKey: ['chatroom', roomId],
-    queryFn: () => base44.entities.ChatRoom.filter({ id: roomId }).then(list => list[0]),
+    queryFn: async () => {
+      const list = await base44.entities.ChatRoom.filter({ id: roomId });
+      return hydrateRoomParticipantNames(list[0]);
+    },
     enabled: !!roomId,
     onSuccess: (data) => {
       if (data?.pinned_message_id) setPinnedMsgId(data.pinned_message_id);
@@ -754,7 +759,7 @@ export default function ChatRoom() {
         const typers = Object.values(state)
           .flat()
           .filter(p => p.typing && p.email !== user.email)
-          .map(p => p.name || p.email);
+          .map(p => p.name || 'Hiker');
         setTypingUsers(typers);
       })
       .subscribe();
@@ -810,7 +815,7 @@ export default function ChatRoom() {
     if (isGroup) return room.name || 'Group Chat';
     if (room.name && room.name !== '') return room.name;
     const otherIdx = room.participants?.indexOf(user.email) === 0 ? 1 : 0;
-    return room.participant_names?.[otherIdx] || room.participants?.[otherIdx] || 'Chat';
+    return room.participant_names?.[otherIdx] || 'Hiker';
   })();
 
   const tripTitle = room?.trip_title || null;
@@ -952,7 +957,7 @@ export default function ChatRoom() {
 
   return (
     <div
-      className="flex flex-col h-[calc(100vh-64px)] md:h-screen max-w-lg mx-auto bg-white dark:bg-gray-900 relative"
+      className="flex h-full min-h-0 flex-col max-w-lg mx-auto bg-white dark:bg-gray-900 relative overflow-hidden"
       onDragOver={e => e.preventDefault()}
       onDrop={handleDrop}
     >
@@ -1036,7 +1041,7 @@ export default function ChatRoom() {
       )}
 
       {/* ── Messages ── */}
-      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-0" onScroll={handleScroll}>
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 py-4 space-y-0" onScroll={handleScroll}>
         {isLoading ? (
           <div className="flex justify-center py-8">
             <Loader2 className="w-6 h-6 animate-spin text-gray-300" />
