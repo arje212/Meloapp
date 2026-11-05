@@ -26,7 +26,7 @@ export default function Mountains() {
   });
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-6">
+    <div className="max-w-6xl mx-auto px-5 md:px-4 py-6">
       <div className="mb-6">
         <h1 className="font-display text-2xl md:text-3xl font-bold mb-1">Explore Destinations</h1>
         <p className="text-muted-foreground text-sm">Discover {mountains.length} mountains now, with beaches and city trips coming into the same flow</p>

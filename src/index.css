@@ -95,7 +95,12 @@
 }
 
 @media (max-width: 767px) {
-  .app-page-content > *,
+  .app-page-content > * {
+    max-width: none;
+    margin-left: 0;
+    margin-right: 0;
+  }
+
   .admin-page-content > *,
   .public-profile-page {
     max-width: none;
