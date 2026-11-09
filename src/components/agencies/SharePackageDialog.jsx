@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
-import { CheckCircle2, ChevronLeft, ChevronRight, Clock, MapPin, Megaphone, Mountain, Package, Users, X } from 'lucide-react';
+import { Check, CheckCircle2, Clock, ImagePlus, MapPin, Megaphone, Mountain, Package, Star, Users, X } from 'lucide-react';
+import PackagePhotoLayout, { PHOTO_LAYOUTS } from '@/components/feed/PackagePhotoLayout';
 
 const asList = value => Array.isArray(value)
   ? value.filter(Boolean)
@@ -15,7 +16,7 @@ const uniqueImages = (pkg, agency) => [...new Set([
   agency.cover_url,
   ...asList(agency.gallery_photos),
   ...asList(pkg.package_photos),
-].filter(Boolean))].slice(0, 10);
+].filter(Boolean))].slice(0, 20);
 
 const formatDate = value => {
   const date = new Date(`${value}T00:00:00`);
@@ -28,7 +29,7 @@ const PACKAGE_DETAILS_MARKER = '\n\n[[MELOTRIP_PACKAGE_DETAILS:';
 
 export default function SharePackageDialog({ pkg, agency, user, onClose }) {
   const queryClient = useQueryClient();
-  const images = uniqueImages(pkg, agency);
+  const suggested = uniqueImages(pkg, agency);
   const includes = asList(pkg.includes);
   const itinerary = asList(pkg.nature_spots);
   const pickups = asList(pkg.pickup_locations);
@@ -40,7 +41,35 @@ export default function SharePackageDialog({ pkg, agency, user, onClose }) {
   const [posting, setPosting] = useState(false);
   const [error, setError] = useState('');
   const [done, setDone] = useState(false);
-  const [imageIndex, setImageIndex] = useState(0);
+  // Agency chooses which photos go in the post (order = order shown; first = cover)
+  const [pool, setPool] = useState(suggested);
+  const [selected, setSelected] = useState(suggested.slice(0, 10));
+  const [layout, setLayout] = useState('carousel');
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef(null);
+  const images = selected;
+
+  const toggleImage = (url) => setSelected(prev =>
+    prev.includes(url) ? prev.filter(u => u !== url) : prev.length >= 20 ? prev : [...prev, url]);
+  const makeCover = (url) => setSelected(prev => [url, ...prev.filter(u => u !== url)]);
+  const handleUpload = async (event) => {
+    const files = Array.from(event.target.files || []).filter(f => f.type.startsWith('image/')).slice(0, 20);
+    event.target.value = '';
+    if (!files.length) return;
+    setUploading(true); setError('');
+    try {
+      const urls = [];
+      for (const file of files) {
+        const { file_url } = await base44.integrations.Core.UploadFile({ file });
+        urls.push(file_url);
+      }
+      setPool(prev => [...new Set([...prev, ...urls])]);
+      setSelected(prev => [...new Set([...prev, ...urls])].slice(0, 20));
+    } catch (uploadError) {
+      console.error('Photo upload failed:', uploadError);
+      setError('Hindi na-upload ang ilang photo. Pakisubukan ulit.');
+    } finally { setUploading(false); }
+  };
 
   const handlePost = async () => {
     if (!caption.trim() || posting) return;
@@ -62,6 +91,7 @@ export default function SharePackageDialog({ pkg, agency, user, onClose }) {
         open_for: openFor,
         available_dates: dates,
         promo_text: pkg.promo_text,
+        photo_layout: layout,
       };
       await base44.entities.Post.create({
         author_id: user.id,
@@ -110,25 +140,18 @@ export default function SharePackageDialog({ pkg, agency, user, onClose }) {
         ) : (
           <div className="space-y-4 px-5 pb-5">
             <div className="overflow-hidden rounded-xl border bg-card">
-              <div className="relative aspect-[16/9] bg-muted">
-                {images.length > 0 ? (
-                  <img src={images[imageIndex]} alt={`${pkg.title} destination`} className="h-full w-full object-cover" />
-                ) : (
-                  <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground"><Mountain className="h-8 w-8" /><span className="text-xs">Add destination photos to your package</span></div>
-                )}
-                {images.length > 1 && <>
-                  <button type="button" aria-label="Previous photo" onClick={() => setImageIndex(i => (i - 1 + images.length) % images.length)} className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-black/60 p-2 text-white"><ChevronLeft className="h-5 w-5" /></button>
-                  <button type="button" aria-label="Next photo" onClick={() => setImageIndex(i => (i + 1) % images.length)} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-black/60 p-2 text-white"><ChevronRight className="h-5 w-5" /></button>
-                  <span className="absolute bottom-2 right-2 rounded-full bg-black/60 px-2 py-1 text-[10px] font-medium text-white">{imageIndex + 1} / {images.length}</span>
-                </>}
-                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent p-4 pt-12 text-white">
-                  <p className="text-lg font-bold leading-tight">{pkg.title}</p>
-                  <p className="mt-1 flex items-center gap-1 text-xs"><MapPin className="h-3.5 w-3.5" />{pkg.mountain_name}</p>
-                </div>
-              </div>
+              {images.length > 0 ? (
+                <PackagePhotoLayout images={images} layout={layout}>
+                  <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent p-4 pt-12 text-white">
+                    <p className="text-lg font-bold leading-tight">{pkg.title}</p>
+                    <p className="mt-1 flex items-center gap-1 text-xs"><MapPin className="h-3.5 w-3.5" />{pkg.mountain_name}</p>
+                  </div>
+                </PackagePhotoLayout>
+              ) : (
+                <div className="flex aspect-[16/9] flex-col items-center justify-center gap-2 bg-muted text-muted-foreground"><Mountain className="h-8 w-8" /><span className="text-xs">Mag-add ng photos para sa post</span></div>
+              )}
               <div className="space-y-3 p-4">
-                <p className="text-[11px] leading-relaxed text-muted-foreground">Kasama sa post ang destination photos at mga larawan mula sa agency gallery, gaya ng group photos.</p>
-                <div className="grid grid-cols-2 gap-2">
+                                <div className="grid grid-cols-2 gap-2">
                   <div className="rounded-lg bg-primary/5 p-2.5"><p className="text-[10px] text-muted-foreground">Price per person</p><p className="font-bold text-primary">₱{Number(pkg.price || 0).toLocaleString()}</p></div>
                   <div className="rounded-lg bg-muted/60 p-2.5"><p className="text-[10px] text-muted-foreground">Trip duration</p><p className="flex items-center gap-1 text-sm font-semibold"><Clock className="h-3.5 w-3.5" />{pkg.duration_days || 1} day{Number(pkg.duration_days || 1) === 1 ? '' : 's'}</p></div>
                 </div>
@@ -150,14 +173,49 @@ export default function SharePackageDialog({ pkg, agency, user, onClose }) {
               </div>
             </div>
 
-            {images.length > 1 && <div className="space-y-1.5">
-              <p className="text-xs font-medium text-muted-foreground">Destination at agency/group photos · {images.length} photos</p>
-              <div className="flex gap-2 overflow-x-auto">{images.map((image, index) => (
-              <button key={image} type="button" onClick={() => setImageIndex(index)} aria-label={`Show photo ${index + 1}`} className={`h-14 w-16 shrink-0 overflow-hidden rounded-lg border-2 ${imageIndex === index ? 'border-primary' : 'border-transparent'}`}>
-                <img src={image} alt="" className="h-full w-full object-cover" />
-              </button>
-              ))}</div>
-            </div>}
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Layout ng photos</p>
+              <div className="grid grid-cols-3 gap-2">
+                {PHOTO_LAYOUTS.map(opt => (
+                  <button key={opt.key} type="button" onClick={() => setLayout(opt.key)}
+                    className={`rounded-xl border-2 p-2 text-left transition-colors ${layout === opt.key ? 'border-primary bg-primary/5' : 'border-border'}`}>
+                    <p className="text-xs font-semibold">{opt.label}</p>
+                    <p className="text-[10px] leading-tight text-muted-foreground">{opt.hint}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium">Photos <span className="text-xs font-normal text-muted-foreground">{selected.length}/20 napili</span></p>
+                <Button type="button" variant="outline" size="sm" className="rounded-full" disabled={uploading || selected.length >= 20} onClick={() => fileRef.current?.click()}>
+                  <ImagePlus className="mr-1.5 h-4 w-4" />{uploading ? 'Ina-upload...' : 'Mag-add'}
+                </Button>
+                <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={handleUpload} />
+              </div>
+              {pool.length > 0 ? (
+                <div className="grid grid-cols-4 gap-2">
+                  {pool.map(url => {
+                    const order = selected.indexOf(url);
+                    const on = order >= 0;
+                    return (
+                      <div key={url} className="relative aspect-square">
+                        <button type="button" onClick={() => toggleImage(url)} aria-label={on ? 'Alisin ang photo' : 'Piliin ang photo'}
+                          className={`h-full w-full overflow-hidden rounded-lg border-2 ${on ? 'border-primary' : 'border-transparent opacity-60'}`}>
+                          <img src={url} alt="" className="h-full w-full object-cover" loading="lazy" />
+                        </button>
+                        {on && <span className="pointer-events-none absolute left-1 top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">{order === 0 ? <Check className="h-3 w-3" /> : order + 1}</span>}
+                        {on && order !== 0 && (
+                          <button type="button" onClick={() => makeCover(url)} aria-label="Gawing cover" className="absolute bottom-1 right-1 rounded-full bg-black/65 p-1 text-white"><Star className="h-3 w-3" /></button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : <p className="text-xs text-muted-foreground">Wala pang photos. Pindutin ang Mag-add para pumili mula sa phone.</p>}
+              <p className="text-[11px] text-muted-foreground">Pindutin ang photo para piliin/alisin. Ang may check ang cover; pindutin ang ⭐ para gawing cover ang ibang photo.</p>
+            </div>
 
             <div>
               <label htmlFor="package-share-caption" className="mb-1 block text-sm font-medium">Caption</label>
@@ -167,7 +225,7 @@ export default function SharePackageDialog({ pkg, agency, user, onClose }) {
             {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
             <div className="flex gap-2">
               <Button variant="outline" className="flex-1 rounded-full" onClick={onClose} disabled={posting}><X className="mr-1 h-4 w-4" />Cancel</Button>
-              <Button className="flex-1 rounded-full" onClick={handlePost} disabled={!caption.trim() || posting}>
+              <Button className="flex-1 rounded-full" onClick={handlePost} disabled={!caption.trim() || posting || uploading}>
                 {posting ? <Package className="mr-2 h-4 w-4 animate-pulse" /> : <Megaphone className="mr-2 h-4 w-4" />}
                 {posting ? 'Sharing...' : 'Share to Feed'}
               </Button>

@@ -58,19 +58,22 @@ export default function AppLayout() {
         if (!rooms?.length) { setUnreadCount(0); return; }
 
         const roomIds = rooms.map(r => r.id);
-        const { data: messages } = await supabase
+        // Count on the server instead of downloading every unread message id (that list was capped at
+        // 1000 rows and got heavier with every message)
+        const { count } = await supabase
           .from('chat_messages')
-          .select('id')
+          .select('id', { count: 'exact', head: true })
           .neq('sender_email', user.email)
           .eq('is_read', false)
           .in('room_id', roomIds);
 
-        setUnreadCount(messages?.length || 0);
+        setUnreadCount(count || 0);
       } catch { /* silent */ }
     };
 
     fetchUnread();
-    const interval = setInterval(fetchUnread, 10_000);
+    // no polling while the app is in the background (saves battery and data)
+    const interval = setInterval(() => { if (document.visibilityState === 'visible') fetchUnread(); }, 10_000);
     return () => clearInterval(interval);
   }, [user?.email]);
 
@@ -80,6 +83,15 @@ export default function AppLayout() {
     enabled:        !!user?.email,
     refetchInterval: 30_000,
   });
+
+  // Tabs replace the current history entry (like Facebook/Instagram): Back from a tab returns to Feed
+  // instead of cycling through every tab you visited. Tapping Feed while on Feed refreshes it.
+  const handleTabClick = (e, item) => {
+    if (item.path === '/' && location.pathname === '/') {
+      e.preventDefault();
+      window.dispatchEvent(new Event('melotrip:feed-refresh'));
+    }
+  };
 
   const navItems = [
     { path: '/',         icon: Home,          label: 'Feed' },
@@ -108,6 +120,8 @@ export default function AppLayout() {
               <Link
                 key={item.path}
                 to={item.path}
+                replace
+                onClick={(e) => handleTabClick(e, item)}
                 className={`relative flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                   isActive
                     ? 'bg-primary text-primary-foreground'
@@ -165,6 +179,8 @@ export default function AppLayout() {
               <Link
                 key={item.path}
                 to={item.path}
+                replace
+                onClick={(e) => handleTabClick(e, item)}
                 className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-all ${
                   isActive ? 'text-primary' : 'text-muted-foreground'
                 }`}

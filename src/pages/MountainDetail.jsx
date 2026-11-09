@@ -1,6 +1,7 @@
+import MapLink from '@/components/MapLink';
 import { useQuery } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, MapPin, TrendingUp, Clock, Star, CalendarPlus, Loader2, Navigation, CalendarDays, Users, Package } from 'lucide-react';
@@ -16,7 +17,7 @@ const difficultyColors = {
 
 export default function MountainDetail() {
   const navigate = useNavigate();
-  const id = window.location.pathname.split('/mountains/')[1];
+  const { id } = useParams();
 
   const { data: mountain, isLoading } = useQuery({
     queryKey: ['mountain', id],
@@ -118,6 +119,8 @@ export default function MountainDetail() {
             <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{mountain.description}</p>
           </div>
         )}
+
+        <MapLink name={mountain.name} latitude={mountain.latitude} longitude={mountain.longitude} className="w-full" />
 
         {/* Trail Map */}
         {(mountain.latitude || mountain.trail_waypoints?.length > 0) && (

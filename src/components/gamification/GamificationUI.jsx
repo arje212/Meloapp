@@ -319,7 +319,6 @@ export function LeaderboardEntry({ rank, profile, score, type }) {
       />
       <div className="flex-1">
         <p className="font-semibold text-white">{profile?.full_name}</p>
-        <p className="text-xs text-slate-400">{profile?.email}</p>
       </div>
       <div className="text-right">
         <p className="text-2xl font-bold text-amber-400">{score}</p>

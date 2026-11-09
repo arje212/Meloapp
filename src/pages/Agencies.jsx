@@ -3,12 +3,13 @@ import { useQuery } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Search, MapPin, Star, Loader2, Store, CheckCircle } from 'lucide-react';
+import { Search, MapPin, Star, Store, CheckCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { useAgencyPlans } from '@/lib/useAgencyPlans';
 import { planRank } from '@/lib/plans';
 import PlanBadge from '@/components/agencies/PlanBadge';
+import { CardGridSkeleton } from '@/components/Skeletons';
 
 export default function Agencies() {
   const [search, setSearch] = useState('');
@@ -46,7 +47,7 @@ export default function Agencies() {
     .sort((a, b) => planRank(plans[b.id]) - planRank(plans[a.id]) || (Number(b.rating) || 0) - (Number(a.rating) || 0));
 
   return (
-    <div className="max-w-6xl mx-auto px-5 md:px-4 py-6">
+    <div className="max-w-6xl mx-auto px-4 py-6">
       <div className="mb-6">
         <h1 className="font-display text-2xl md:text-3xl font-bold mb-1">Travel Agencies</h1>
         <p className="text-muted-foreground text-sm">Book tours from verified agencies</p>
@@ -58,7 +59,7 @@ export default function Agencies() {
       </div>
 
       {isLoading ? (
-        <div className="flex justify-center py-16"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
+        <CardGridSkeleton count={4} />
       ) : filtered.length === 0 ? (
         <div className="text-center py-16">
           <Store className="w-16 h-16 text-muted-foreground/30 mx-auto mb-4" />

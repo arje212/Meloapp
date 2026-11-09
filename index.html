@@ -3,11 +3,45 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/icons/icon_padded_preview.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Melotrip" />
+    <meta name="theme-color" content="#16833f" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Melotrip - Philippine Travel Platform</title>
+    <style>
+      /* First paint before JavaScript runs: a feed-shaped skeleton instead of a blank screen / spinner */
+      #boot{--b:#eceef0;--c:#fff;min-height:100vh;background:#f8f9fa}
+      @media (prefers-color-scheme: dark){#boot{--b:#2a2d31;--c:#17191c;background:#0f1113}}
+      #boot .bar{height:56px;background:var(--c);border-bottom:1px solid var(--b)}
+      #boot .wrap{max-width:672px;margin:0 auto;padding:12px}
+      #boot .card{background:var(--c);border:1px solid var(--b);border-radius:16px;margin-bottom:12px;overflow:hidden}
+      #boot .sk{background:var(--b);border-radius:8px;position:relative;overflow:hidden}
+      #boot .sk::after{content:"";position:absolute;inset:0;transform:translateX(-100%);
+        background:linear-gradient(90deg,transparent,rgba(255,255,255,.35),transparent);animation:bootsh 1.3s infinite}
+      @keyframes bootsh{to{transform:translateX(100%)}}
+      #boot .row{display:flex;gap:12px;align-items:center;padding:14px}
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="boot" aria-hidden="true">
+        <div class="bar"></div>
+        <div class="wrap">
+          <div class="card">
+            <div class="row"><div class="sk" style="width:44px;height:44px;border-radius:50%"></div>
+              <div style="flex:1"><div class="sk" style="height:12px;width:55%;margin-bottom:8px"></div><div class="sk" style="height:10px;width:30%"></div></div></div>
+            <div class="sk" style="height:260px;border-radius:0"></div>
+          </div>
+          <div class="card">
+            <div class="row"><div class="sk" style="width:44px;height:44px;border-radius:50%"></div>
+              <div style="flex:1"><div class="sk" style="height:12px;width:45%;margin-bottom:8px"></div><div class="sk" style="height:10px;width:25%"></div></div></div>
+            <div class="sk" style="height:120px;border-radius:0"></div>
+          </div>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

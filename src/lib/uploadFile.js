@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { prepareImageFile } from '@/lib/prepareImage';
 
 /**
  * Upload a file to Supabase storage and return its public URL.
@@ -10,6 +11,7 @@ import { supabase } from '@/lib/supabase';
  * @returns {Promise<string>} public URL
  */
 export async function uploadFile(file, folder = 'uploads') {
+  file = await prepareImageFile(file);
   const ext  = (file.name.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 8) || 'bin';
   const path = `${folder}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
 

@@ -1,12 +1,45 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import { removePushToken } from '@/lib/pushNotifications';
+import { toast } from '@/components/ui/use-toast';
 
 const AuthContext = createContext();
 
+// ── Instant start ────────────────────────────────────────────────────────────
+// Supabase keeps the session in localStorage. If one exists we already know the user is
+// signed in, so show the app right away (like Facebook) and verify in the background.
+const PROFILE_CACHE_KEY = 'melotrip.profile.v1';
+const sessionStorageKey = () => {
+  try { return `sb-${new URL(import.meta.env.VITE_SUPABASE_URL).hostname.split('.')[0]}-auth-token`; }
+  catch { return null; }
+};
+const readCachedUser = () => {
+  try {
+    const key = sessionStorageKey();
+    const rawSession = key && localStorage.getItem(key);
+    if (!rawSession) return { hasSession: false, user: null };
+    const session = JSON.parse(rawSession);
+    if (!session?.access_token && !session?.refresh_token) return { hasSession: false, user: null };
+    const cached = JSON.parse(localStorage.getItem(PROFILE_CACHE_KEY) || 'null');
+    // Only trust the cache when it belongs to the signed-in account
+    const sameUser = cached?.id && session?.user?.id && cached.id === session.user.id;
+    return { hasSession: true, user: sameUser ? cached : null };
+  } catch { return { hasSession: false, user: null }; }
+};
+const writeCachedUser = (u) => {
+  try {
+    if (u) localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(u));
+    else localStorage.removeItem(PROFILE_CACHE_KEY);
+  } catch { /* storage unavailable */ }
+};
+const INITIAL = readCachedUser();
+
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isLoadingAuth, setIsLoadingAuth] = useState(true);
+  const [user, setUser] = useState(INITIAL.user);
+  const [isAuthenticated, setIsAuthenticated] = useState(!!INITIAL.user);
+  // No session on this device -> go straight to Login (no spinner).
+  // Session but no cached profile (first run after update) -> brief skeleton.
+  const [isLoadingAuth, setIsLoadingAuth] = useState(INITIAL.hasSession && !INITIAL.user);
   const [onlineUsers, setOnlineUsers] = useState([]);
   const [authError, setAuthError] = useState(null);
 
@@ -51,11 +84,21 @@ export const AuthProvider = ({ children }) => {
       }
       setAuthError(null);
 
-      const merged = finalProfile
+      let merged = finalProfile
         ? { ...authUser, ...finalProfile }
         : { ...authUser, role: 'user', full_name: authUser.user_metadata?.full_name };
 
+      // Logging in again brings a deactivated account back (like Facebook)
+      if (finalProfile?.deactivated_at) {
+        const { error: reactivateError } = await supabase.from('profiles').update({ deactivated_at: null }).eq('id', authUser.id);
+        if (!reactivateError) {
+          merged = { ...merged, deactivated_at: null };
+          toast({ title: 'Welcome back!', description: 'Na-reactivate na ang account mo.' });
+        }
+      }
+
       setUser(merged);
+      writeCachedUser(merged);
       setIsAuthenticated(true);
     } catch (e) {
       setUser({ ...authUser, role: 'user' });
@@ -71,15 +114,20 @@ export const AuthProvider = ({ children }) => {
       if (session?.user) {
         loadProfile(session.user);
       } else {
+        // Cached login is no longer valid
+        writeCachedUser(null);
+        setUser(null);
+        setIsAuthenticated(false);
         setIsLoadingAuth(false);
       }
-    });
+    }).catch(() => setIsLoadingAuth(false)); // weak signal: keep the cached view
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN' && session?.user) {
         loadProfile(session.user);
       } else if (event === 'SIGNED_OUT') {
+        writeCachedUser(null);
         setUser(null);
         setIsAuthenticated(false);
         setIsLoadingAuth(false);
@@ -135,6 +183,7 @@ export const AuthProvider = ({ children }) => {
   }, [user?.email, user?.full_name, user?.role]);
 
   const logout = async () => {
+    await removePushToken(); // stop notifications for this account on this phone
     await supabase.auth.signOut();
   };
 

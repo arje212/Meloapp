@@ -6,13 +6,18 @@ import { Capacitor } from '@capacitor/core';
 import { BrowserRouter as Router, Route, Routes, useLocation, useNavigate, useNavigationType } from 'react-router-dom';
 import { lazy, Suspense, useState, useEffect, useRef } from 'react';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
-import BrandLogo from '@/components/BrandLogo';
+import AppLayout from '@/components/layout/AppLayout';
+import Feed from '@/pages/Feed';
+import { AppShellSkeleton } from '@/components/Skeletons';
+const PostDetail = lazy(() => import('@/pages/PostDetail'));
+const SearchPage = lazy(() => import('@/pages/Search'));
+const SettingsPage = lazy(() => import('@/pages/Settings'));
 import { toast } from '@/components/ui/use-toast';
+import { useQueryClient } from '@tanstack/react-query';
+import { initPush } from '@/lib/pushNotifications';
 
 const PageNotFound = lazy(() => import('./lib/PageNotFound'));
 const Login = lazy(() => import('@/pages/Login'));
-const AppLayout = lazy(() => import('@/components/layout/AppLayout'));
-const Feed = lazy(() => import('@/pages/Feed'));
 const Mountains = lazy(() => import('@/pages/Mountains'));
 const MountainDetail = lazy(() => import('@/pages/MountainDetail'));
 const Trips = lazy(() => import('@/pages/Trips'));
@@ -42,11 +47,7 @@ const AgencySubscribe = lazy(() => import('@/pages/AgencySubscribe'));
 const AgencyDashboard = lazy(() => import('@/pages/AgencyDashboard'));
 const Leaderboard = lazy(() => import('@/pages/Leaderboard'));
 
-const RouteLoading = () => (
-  <div className="fixed inset-0 flex items-center justify-center bg-background">
-    <div className="w-10 h-10 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
-  </div>
-);
+const RouteLoading = () => <AppShellSkeleton />;
 
 function NativeBackHandler() {
   const location = useLocation();
@@ -126,6 +127,40 @@ function NativeBackHandler() {
   return null;
 }
 
+// Registers this phone for push notifications after login and routes taps to the right screen.
+function PushNotificationsBridge() {
+  const { user, isAuthenticated } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const queryClient = useQueryClient();
+  const pathRef = useRef(location.pathname);
+  useEffect(() => { pathRef.current = location.pathname; }, [location.pathname]);
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform() || !isAuthenticated || !user?.id) return undefined;
+    // Small delay so the permission prompt does not compete with the first screen loading
+    const timer = setTimeout(() => {
+      initPush({
+        user,
+        onOpen: (url) => { if (url && url.startsWith('/')) navigate(url); },
+        onForeground: (n) => {
+          const url = n?.data?.url;
+          // Already looking at that chat: no need to interrupt
+          if (url && pathRef.current === url) return;
+          queryClient.invalidateQueries({ queryKey: ['unread-notifs'] });
+          queryClient.invalidateQueries({ queryKey: ['notifications'] });
+          queryClient.invalidateQueries({ queryKey: ['chatrooms'] });
+          queryClient.invalidateQueries({ queryKey: ['messages'] });
+          toast({ title: n?.title || 'Melotrip', description: n?.body || '' });
+        },
+      });
+    }, 2500);
+    return () => clearTimeout(timer);
+  }, [isAuthenticated, user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return null;
+}
+
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isAuthenticated } = useAuth();
   const [timedOut, setTimedOut] = useState(false);
@@ -136,15 +171,7 @@ const AuthenticatedApp = () => {
   }, []);
 
   if (isLoadingAuth && !timedOut) {
-    return (
-      <div className="fixed inset-0 flex items-center justify-center bg-background">
-        <div className="text-center">
-          <BrandLogo size={72} className="mx-auto mb-3" rounded="xl" />
-          <div className="w-10 h-10 border-4 border-primary/20 border-t-primary rounded-full animate-spin mx-auto mb-3"></div>
-          <p className="text-sm text-muted-foreground">Loading Melotrip...</p>
-        </div>
-      </div>
-    );
+    return <AppShellSkeleton />;
   }
 
   // Public routes - accessible without authentication
@@ -172,6 +199,9 @@ const AuthenticatedApp = () => {
         <Route path="/agencies/:id" element={<AgencyDetail />} />
         <Route path="/chat" element={<Chat />} />
         <Route path="/chat/:id" element={<ChatRoom />} />
+        <Route path="/post/:id" element={<PostDetail />} />
+        <Route path="/search" element={<SearchPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="/profile/:id" element={<PublicProfile />} />
         <Route path="/roadmap" element={<RoadmapPage />} />
@@ -207,6 +237,7 @@ function App() {
         <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <Suspense fallback={<RouteLoading />}>
             <NativeBackHandler />
+            <PushNotificationsBridge />
             <AuthenticatedApp />
           </Suspense>
         </Router>

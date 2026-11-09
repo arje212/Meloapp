@@ -2,12 +2,13 @@ import { useState, useRef, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Heart, MessageCircle, Share2, MapPin, ChevronLeft, ChevronRight,
-  Play, Pause, Volume2, VolumeX,
+  Play, Volume2, VolumeX, Maximize,
   MoreHorizontal, Bookmark, Flag, Facebook, Copy,
   Star, Thermometer, Sun, Backpack, X,
   Mountain, ShoppingBag, ArrowRight,
 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import PackagePhotoLayout from '@/components/feed/PackagePhotoLayout';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/AuthContext';
 import { Link, useNavigate } from 'react-router-dom';
@@ -368,10 +369,20 @@ function MediaCarousel({ images }) {
 // ── Single image ──────────────────────────────────────────────────────────────
 function SingleImage({ src }) {
   const [fullscreen, setFullscreen] = useState(false);
+  const [broken, setBroken] = useState(false);
+  // e.g. an old iPhone HEIC upload: browsers cannot show it. New uploads are converted to JPEG automatically.
+  if (broken) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-1 bg-muted text-muted-foreground py-10 text-center px-6">
+        <p className="text-sm font-medium">Hindi ma-display ang larawan</p>
+        <p className="text-xs">Maaaring HEIC o sirang file ito. Hilingin sa nag-post na i-upload ulit.</p>
+      </div>
+    );
+  }
   return (
     <>
       <div className="bg-black overflow-hidden cursor-pointer" style={{ maxHeight: 520 }} onClick={() => setFullscreen(true)}>
-        <img src={src} alt="" className="w-full h-full object-cover" style={{ maxHeight: 520 }} loading="lazy" decoding="async" />
+        <img src={src} alt="" className="w-full h-full object-cover" style={{ maxHeight: 520 }} loading="lazy" decoding="async" onError={() => setBroken(true)} />
       </div>
       {fullscreen && <FullscreenViewer images={[src]} startIndex={0} onClose={() => setFullscreen(false)} />}
     </>
@@ -379,34 +390,49 @@ function SingleImage({ src }) {
 }
 
 // ── Video / Reel ──────────────────────────────────────────────────────────────
+// 1x1 transparent poster: stops Android WebView from drawing its giant default "play" placeholder.
+const BLANK_POSTER = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+
 function ReelMedia({ src, isReel }) {
   const videoRef = useRef(null);
   const containerRef = useRef(null);
   const [playing, setPlaying] = useState(false);
-  const [muted, setMuted] = useState(false);
+  const [muted, setMuted] = useState(true);       // start muted (like Instagram/Facebook) so autoplay always works
   const [progress, setProgress] = useState(0);
+  const [ready, setReady] = useState(false);      // first frame decoded
+  const [failed, setFailed] = useState(false);
+  // Follow the real video shape: landscape stays landscape, portrait stays portrait.
+  const [ratio, setRatio] = useState(isReel ? 9 / 16 : 16 / 9);
+
+  // "#t=0.1" makes the browser paint a frame as the thumbnail, so a video is visible while scrolling.
+  const videoSrc = src && !src.includes('#') ? `${src}#t=0.1` : src;
 
   useEffect(() => {
     const video = videoRef.current;
     const container = containerRef.current;
-    if (!video || !container) return;
+    if (!video || !container) return undefined;
     const observer = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting && entry.intersectionRatio >= 0.6) {
-        video.muted = false;
-        video.play().then(() => setPlaying(true)).catch(() => {
-          video.muted = true; setMuted(true);
-          video.play().then(() => setPlaying(true)).catch(() => {});
-        });
-      } else { video.pause(); setPlaying(false); }
+        video.play().then(() => setPlaying(true)).catch(() => {});
+      } else {
+        video.pause(); setPlaying(false);
+      }
     }, { threshold: [0, 0.6] });
     observer.observe(container);
     return () => observer.disconnect();
   }, []);
 
-  const toggle = () => {
+  const onMeta = (e) => {
+    const { videoWidth: w, videoHeight: h } = e.currentTarget;
+    if (w && h) setRatio(Math.min(16 / 9, Math.max(9 / 16, w / h))); // clamp extreme shapes
+  };
+
+  const toggle = (e) => {
+    e?.stopPropagation();
     const v = videoRef.current;
-    if (!v) return;
-    if (playing) { v.pause(); setPlaying(false); } else { v.play(); setPlaying(true); }
+    if (!v || failed) return;
+    if (v.paused) { v.play().then(() => setPlaying(true)).catch(() => {}); }
+    else { v.pause(); setPlaying(false); }
   };
   const toggleMute = (e) => {
     e.stopPropagation();
@@ -415,6 +441,18 @@ function ReelMedia({ src, isReel }) {
     v.muted = !v.muted;
     setMuted(v.muted);
   };
+  const goFullscreen = (e) => {
+    e.stopPropagation();
+    const v = videoRef.current;
+    if (!v) return;
+    if (v.requestFullscreen) v.requestFullscreen().catch(() => {});
+    else if (v.webkitEnterFullscreen) v.webkitEnterFullscreen(); // iPhone
+  };
+  const retry = (e) => {
+    e.stopPropagation();
+    setFailed(false); setReady(false);
+    videoRef.current?.load();
+  };
   const onTimeUpdate = () => {
     const v = videoRef.current;
     if (!v || !v.duration) return;
@@ -422,46 +460,71 @@ function ReelMedia({ src, isReel }) {
   };
   const seek = (e) => {
     e.stopPropagation();
+    const v = videoRef.current;
+    if (!v || !v.duration) return;
     const rect = e.currentTarget.getBoundingClientRect();
-    const ratio = (e.clientX - rect.left) / rect.width;
-    if (videoRef.current) videoRef.current.currentTime = ratio * videoRef.current.duration;
+    v.currentTime = ((e.clientX - rect.left) / rect.width) * v.duration;
   };
 
   return (
     <div
       ref={containerRef}
-      className="relative bg-black group overflow-hidden"
-      style={{ aspectRatio: isReel ? '9/16' : '16/9', maxHeight: isReel ? 680 : 400 }}
+      className="relative mx-auto w-full max-w-full bg-black overflow-hidden cursor-pointer select-none flex items-center justify-center"
+      style={{ aspectRatio: String(ratio), maxHeight: '75vh' }}
       onClick={toggle}
     >
+      {!ready && !failed && <div className="absolute inset-0 animate-pulse bg-muted-foreground/20" />}
+
       <video
         ref={videoRef}
-        src={src}
-        className="w-full h-full object-cover"
-        loop playsInline preload="metadata"
+        src={videoSrc}
+        poster={BLANK_POSTER}
+        className="block w-full h-full object-contain object-center bg-black"
+        muted={muted}
+        loop playsInline preload="auto"
+        onLoadedMetadata={onMeta}
+        onLoadedData={() => setReady(true)}
+        onCanPlay={() => setReady(true)}
+        onError={() => setFailed(true)}
         onTimeUpdate={onTimeUpdate}
-        onEnded={() => setPlaying(false)}
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
       />
-      {!playing && (
+
+      {failed && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/80 text-white text-sm">
+          <p>Hindi ma-play ang video.</p>
+          <button onClick={retry} className="px-4 py-1.5 rounded-full bg-white/20 hover:bg-white/30 font-semibold">Subukan ulit</button>
+        </div>
+      )}
+
+      {!playing && !failed && ready && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <div className="w-16 h-16 bg-black/50 backdrop-blur rounded-full flex items-center justify-center">
             <Play className="w-7 h-7 text-white fill-white ml-1" />
           </div>
         </div>
       )}
-      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-3 opacity-0 group-hover:opacity-100 transition-opacity">
-        <div className="w-full h-1 bg-white/30 rounded-full mb-2 cursor-pointer" onClick={seek}>
-          <div className="h-full bg-white rounded-full" style={{ width: `${progress}%` }} />
-        </div>
-        <div className="flex items-center justify-between">
-          <button onClick={toggle} className="text-white p-1">
-            {playing ? <Pause className="w-4 h-4 fill-white" /> : <Play className="w-4 h-4 fill-white" />}
-          </button>
-          <button onClick={toggleMute} className="text-white p-1">
-            {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-          </button>
-        </div>
-      </div>
+
+      {/* Controls are always visible (touch screens have no hover) */}
+      {!failed && (
+        <>
+          <div className="absolute bottom-2 right-2 flex gap-2">
+            <button onClick={goFullscreen} aria-label="Fullscreen" className="w-9 h-9 rounded-full bg-black/55 text-white flex items-center justify-center">
+              <Maximize className="w-4 h-4" />
+            </button>
+            <button onClick={toggleMute} aria-label={muted ? 'Unmute' : 'Mute'} className="w-9 h-9 rounded-full bg-black/55 text-white flex items-center justify-center">
+              {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+            </button>
+          </div>
+          <div className="absolute bottom-0 left-0 right-0 h-3 flex items-end cursor-pointer" onClick={seek}>
+            <div className="w-full h-1 bg-white/30">
+              <div className="h-full bg-white" style={{ width: `${progress}%` }} />
+            </div>
+          </div>
+        </>
+      )}
+
       {isReel && (
         <div className="absolute top-3 left-3 bg-gradient-to-r from-purple-600 to-pink-500 text-white text-[10px] px-2.5 py-1 rounded-full font-bold shadow pointer-events-none">
           REEL
@@ -641,7 +704,7 @@ export default function PostCard({ post, onComment }) {
           title: 'New like on your post',
           message: `${user.full_name || user.email} liked your post.`,
           type: 'comment',
-          link: '/',
+          link: `/post/${post.id}`,
           icon: '\u2764\uFE0F',
         });
       }
@@ -784,6 +847,11 @@ export default function PostCard({ post, onComment }) {
       {!isTripPost && (
         (isReel || isVideo) && post.image_url ? (
           <ReelMedia src={post.image_url} isReel={isReel} />
+        ) : isPackagePromo && ['collage', 'grid'].includes(packagePost?.details?.photo_layout) && (isCarousel || post.image_url) ? (
+          <PackagePhotoLayout
+            images={isCarousel ? post.post_images : [post.image_url]}
+            layout={packagePost.details.photo_layout}
+          />
         ) : isCarousel ? (
           <MediaCarousel images={post.post_images} />
         ) : post.image_url ? (
@@ -797,7 +865,11 @@ export default function PostCard({ post, onComment }) {
           <div className="flex items-center gap-1.5">
             {likesCount > 0 && <><Heart className="w-3.5 h-3.5 fill-red-500 text-red-500" /><span>{likesCount}</span></>}
           </div>
-          {post.comments_count > 0 && <span>{post.comments_count} comments</span>}
+          {post.comments_count > 0 && (
+            <button type="button" onClick={() => onComment?.(post)} className="py-1 pl-4 -my-1 hover:underline active:opacity-70">
+              {post.comments_count} {post.comments_count === 1 ? 'comment' : 'comments'}
+            </button>
+          )}
         </div>
       )}
 

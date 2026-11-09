@@ -251,7 +251,7 @@ export default function AgencyDashboard() {
   const [uploadingPromo, setUploadingPromo] = useState(false);
 
   const [editProfileDialog,   setEditProfileDialog]   = useState(false);
-  const [profileForm,         setProfileForm]         = useState({ logo_url: '', cover_url: '', gallery_photos: [], description: '', location: '', contact_phone: '', website: '', facebook_url: '', instagram_url: '', years_operating: '', gcash_number: '', gcash_name: '', business_reg_document_path: '', permit_document_path: '' });
+  const [profileForm,         setProfileForm]         = useState({ logo_url: '', cover_url: '', gallery_photos: [], description: '', location: '', contact_phone: '', contact_email: '', gcash_qr_url: '', website: '', facebook_url: '', instagram_url: '', years_operating: '', gcash_number: '', gcash_name: '', business_reg_document_path: '', permit_document_path: '' });
   const [uploadingProfileImg, setUploadingProfileImg] = useState(null);
   const [profileTab,          setProfileTab]          = useState('images');
 
@@ -414,10 +414,19 @@ export default function AgencyDashboard() {
   const handleSaveProfile = async () => {
     setSaving(true); setSaveError('');
     try {
+      const bizEmail = String(profileForm.contact_email || '').trim();
+      if (bizEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(bizEmail)) {
+        setSaveError('Ilagay ang tamang business email (hal. info@agency.com).'); setSaving(false); return;
+      }
       const updates = {};
-      const fields = ['logo_url','cover_url','gallery_photos','description','location','contact_phone','website','facebook_url','instagram_url','years_operating','gcash_number','gcash_name','business_reg_document_path','permit_document_path'];
-      fields.forEach(f => { if (profileForm[f] !== undefined && profileForm[f] !== '') updates[f] = profileForm[f]; });
-      if (profileForm.years_operating) updates.years_operating = Number(profileForm.years_operating);
+      const fields = ['logo_url','cover_url','gallery_photos','description','location','contact_phone','website','facebook_url','instagram_url','years_operating','gcash_number','gcash_name','gcash_qr_url','contact_email','business_reg_document_path','permit_document_path'];
+      // An emptied box now clears the saved value (before, it was skipped and the old text came back)
+      const numeric = new Set(['years_operating']);
+      fields.forEach(f => {
+        if (profileForm[f] === undefined) return;
+        if (profileForm[f] === '') updates[f] = null;
+        else updates[f] = numeric.has(f) ? Number(profileForm[f]) : profileForm[f];
+      });
       
       try {
         const updatedAgency = await base44.entities.Agency.update(agency.id, updates);
@@ -427,16 +436,14 @@ export default function AgencyDashboard() {
           }
         }
       } catch (updateErr) {
-        // If update fails with column-missing error, try without gcash fields
+        // A new column is missing in the database: say so instead of pretending it was saved
         const errMsg = `${updateErr?.message || ''} ${updateErr?.details || ''}`;
         if (/column|does not exist/i.test(errMsg)) {
-          const { gcash_number, gcash_name, ...safeUpdates } = updates;
-          await base44.entities.Agency.update(agency.id, safeUpdates);
-        } else {
-          throw updateErr;
+          throw new Error('May field na hindi pa naka-setup sa database (contact email / GCash QR). Hilingin sa admin na i-run ang latest migration.');
         }
+        throw updateErr;
       }
-      
+
       qc.invalidateQueries({ queryKey: ['my-agency'] });
       setEditProfileDialog(false);
     } catch (err) { setSaveError(err.message || 'Unable to save profile.'); }
@@ -663,7 +670,7 @@ export default function AgencyDashboard() {
   };
 
   const openEditProfile = () => {
-    setProfileForm({ logo_url: agency.logo_url || '', cover_url: agency.cover_url || '', gallery_photos: agency.gallery_photos || [], description: agency.description || '', location: agency.location || '', contact_phone: agency.contact_phone || '', website: agency.website || '', facebook_url: agency.facebook_url || '', instagram_url: agency.instagram_url || '', years_operating: String(agency.years_operating || ''), gcash_number: agency.gcash_number || '', gcash_name: agency.gcash_name || '', business_reg_document_path: agency.business_reg_document_path || '', permit_document_path: agency.permit_document_path || '' });
+    setProfileForm({ logo_url: agency.logo_url || '', cover_url: agency.cover_url || '', gallery_photos: agency.gallery_photos || [], description: agency.description || '', location: agency.location || '', contact_phone: agency.contact_phone || '', contact_email: agency.contact_email || '', gcash_qr_url: agency.gcash_qr_url || '', website: agency.website || '', facebook_url: agency.facebook_url || '', instagram_url: agency.instagram_url || '', years_operating: String(agency.years_operating || ''), gcash_number: agency.gcash_number || '', gcash_name: agency.gcash_name || '', business_reg_document_path: agency.business_reg_document_path || '', permit_document_path: agency.permit_document_path || '' });
     setProfileTab('images'); setSaveError(''); setEditProfileDialog(true);
   };
 
@@ -1082,6 +1089,7 @@ export default function AgencyDashboard() {
               <div><Label>Agency Description</Label><Textarea className="mt-1 resize-none" rows={3} value={profileForm.description} onChange={e => setProfileForm(p => ({ ...p, description: e.target.value }))} placeholder="Tell clients about your agency..." /></div>
               <div><Label>Location</Label><div className="relative mt-1"><MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" /><Input className="pl-9" value={profileForm.location} onChange={e => setProfileForm(p => ({ ...p, location: e.target.value }))} placeholder="e.g. Baguio City, Benguet" /></div></div>
               <div><Label>Contact Phone</Label><div className="relative mt-1"><Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" /><Input className="pl-9" value={profileForm.contact_phone} onChange={e => setProfileForm(p => ({ ...p, contact_phone: e.target.value }))} placeholder="+63 9XX XXX XXXX" /></div></div>
+              <div><Label>Business Email <span className="text-muted-foreground text-xs">(makikita ng customers)</span></Label><Input className="mt-1" type="email" inputMode="email" placeholder="info@youragency.com" value={profileForm.contact_email} onChange={e => setProfileForm(p => ({ ...p, contact_email: e.target.value }))} /></div>
               <div><Label>Years in Business</Label><Input className="mt-1" type="number" min="0" value={profileForm.years_operating} onChange={e => setProfileForm(p => ({ ...p, years_operating: e.target.value }))} placeholder="e.g. 5" /></div>
               <div><Label>Website</Label><div className="relative mt-1"><Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" /><Input className="pl-9" value={profileForm.website} onChange={e => setProfileForm(p => ({ ...p, website: e.target.value }))} placeholder="https://yourwebsite.com" /></div></div>
               <div><Label>Facebook Page URL</Label><div className="relative mt-1"><Facebook className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" /><Input className="pl-9" value={profileForm.facebook_url} onChange={e => setProfileForm(p => ({ ...p, facebook_url: e.target.value }))} placeholder="https://facebook.com/yourpage" /></div></div>
@@ -1160,6 +1168,22 @@ export default function AgencyDashboard() {
                     value={profileForm.gcash_name}
                     onChange={e => setProfileForm(p => ({ ...p, gcash_name: e.target.value }))}
                   />
+                </div>
+                <div>
+                  <Label className="text-xs text-blue-900">GCash QR Code <span className="text-blue-700 font-normal">(mas ligtas: QR na lang ang ipapakita sa customers)</span></Label>
+                  {profileForm.gcash_qr_url ? (
+                    <div className="mt-1 flex items-center gap-3">
+                      <img src={profileForm.gcash_qr_url} alt="GCash QR" className="w-24 h-24 rounded-lg bg-white border object-contain" />
+                      <Button type="button" variant="outline" size="sm" className="rounded-full" onClick={() => setProfileForm(p => ({ ...p, gcash_qr_url: '' }))}>Alisin</Button>
+                    </div>
+                  ) : (
+                    <label className="mt-1 flex items-center justify-center gap-2 rounded-xl border-2 border-dashed border-blue-300 bg-white py-4 text-xs text-blue-700 cursor-pointer hover:bg-blue-50">
+                      {uploadingProfileImg === 'gcash_qr' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                      I-upload ang QR (screenshot mula sa GCash app)
+                      <input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) handleProfileImageUpload(f, 'gcash_qr'); }} />
+                    </label>
+                  )}
+                  <p className="mt-1 text-[11px] text-blue-700">Kapag may QR, hindi na ipapakita ang mobile number sa booking.</p>
                 </div>
               </div>
             </>)}

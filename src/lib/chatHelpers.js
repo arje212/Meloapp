@@ -1,3 +1,4 @@
+import { base44 } from '@/api/base44Client';
 import { format, isToday, isYesterday } from 'date-fns';
 import { supabase } from '@/lib/supabase';
 
@@ -196,4 +197,34 @@ export async function fetchMyChatRooms(email, { withUnread = false, limit = 300 
   } catch {
     return dedupeGroupChats(rooms);
   }
+}
+
+
+/**
+ * Open the one-to-one chat with `other`, creating it if you have never chatted.
+ * Looks only at YOUR rooms (the old profile button downloaded every direct room of everybody).
+ */
+export async function startDirectChat(currentUser, other) {
+  const me = String(currentUser?.email || '').toLowerCase();
+  const them = String(other?.email || '').toLowerCase();
+  if (!me || !them || me === them) throw new Error('Cannot start a chat with this user.');
+
+  const { data, error } = await supabase
+    .from('chat_rooms')
+    .select('*')
+    .contains('participants', [currentUser.email])
+    .eq('type', 'direct')
+    .limit(300);
+  if (error) throw error;
+
+  const existing = (data || []).find((r) =>
+    (r.participants || []).length === 2 &&
+    (r.participants || []).some((e) => String(e).toLowerCase() === them));
+  if (existing) return existing;
+
+  return base44.entities.ChatRoom.create({
+    type: 'direct',
+    participants: [currentUser.email, other.email],
+    participant_names: [currentUser.full_name || currentUser.email, other.full_name || 'Hiker'],
+  });
 }

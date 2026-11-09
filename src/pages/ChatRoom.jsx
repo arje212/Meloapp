@@ -1,9 +1,10 @@
+import { ChatSkeleton } from '@/components/Skeletons';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -16,6 +17,8 @@ import {
   Pin, PinOff, ChevronUp,
 } from 'lucide-react';
 import { format } from 'date-fns';
+import { prepareImageFile } from '@/lib/prepareImage';
+import { fetchProfilesByEmails } from '@/lib/profileLookup';
 import {
   parseContent, buildContent, buildVoiceContent,
   dateSeparatorLabel, shouldShowSeparator, getInitials, REACTIONS_LIST,
@@ -268,20 +271,45 @@ function VoiceRecorderButton({ onSendVoice, disabled }) {
   // ✅ FIX: store duration in ref so onstop callback always reads the latest value
   const durationRef = useRef(0);
 
+  const streamRef = useRef(null);
+  const [micError, setMicError] = useState('');
+  useEffect(() => {
+    if (!micError) return undefined;
+    const t = setTimeout(() => setMicError(''), 4500);
+    return () => clearTimeout(t);
+  }, [micError]);
+
+  // The mic must never stay on if the chat is closed while recording
+  useEffect(() => () => {
+    clearInterval(timer.current);
+    streamRef.current?.getTracks().forEach(t => t.stop());
+  }, []);
+
   const start = async () => {
+    setMicError('');
     try {
+      if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+        setMicError('Hindi supported ng device na ito ang voice message.');
+        return;
+      }
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mr = new MediaRecorder(stream);
+      streamRef.current = stream;
+      // Android/Chrome record webm; iPhone Safari only records mp4/aac
+      const mimeType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/aac']
+        .find(t => MediaRecorder.isTypeSupported?.(t));
+      const mr = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
       chunks.current = [];
       durationRef.current = 0;
-      mr.ondataavailable = e => chunks.current.push(e.data);
+      mr.ondataavailable = e => { if (e.data?.size) chunks.current.push(e.data); };
       mr.onstop = () => {
-        const blob = new Blob(chunks.current, { type: 'audio/webm' });
-        // ✅ FIX: use durationRef.current — not stale `duration` state
-        onSendVoice(blob, durationRef.current);
+        const seconds = durationRef.current;
+        const blob = new Blob(chunks.current, { type: mr.mimeType || mimeType || 'audio/webm' });
         stream.getTracks().forEach(t => t.stop());
+        streamRef.current = null;
         setDuration(0);
         durationRef.current = 0;
+        if (seconds < 1 || blob.size === 0) { setMicError('Masyadong maikli. Pindutin at hawakan nang mas matagal.'); return; }
+        onSendVoice(blob, seconds);
       };
       mr.start();
       mediaRecorder.current = mr;
@@ -290,7 +318,14 @@ function VoiceRecorderButton({ onSendVoice, disabled }) {
         durationRef.current += 1;
         setDuration(d => d + 1);
       }, 1000);
-    } catch { /* mic denied */ }
+    } catch (err) {
+      console.warn('Microphone error:', err);
+      setMicError(
+        err?.name === 'NotAllowedError' || err?.name === 'SecurityError'
+          ? 'Hindi pinayagan ang mic. I-allow ang Microphone sa Settings → Apps → Melotrip → Permissions.'
+          : 'Hindi ma-start ang mic. Subukan ulit.'
+      );
+    }
   };
 
   const stop = () => {
@@ -341,12 +376,15 @@ function VoiceRecorderButton({ onSendVoice, disabled }) {
       title="Send voice message"
     >
       <Mic className="w-5 h-5" />
+      {micError && (
+        <span role="alert" className="fixed left-4 right-4 bottom-20 z-50 rounded-xl bg-gray-900 text-white text-xs px-3 py-2 shadow-lg text-left font-normal">{micError}</span>
+      )}
     </button>
   );
 }
 
 // ─── Single message bubble ────────────────────────────────────────────────────
-function MessageBubble({ msg, isMe, isFirst, isLast, isGroup, isPinned, canPin, onReply, onDelete, onPin, allMessages, isHighlighted, msgRef }) {
+function MessageBubble({ msg, isMe, isFirst, isLast, isGroup, isPinned, canPin, onReply, onDelete, onPin, allMessages, isHighlighted, msgRef, avatarUrl }) {
   const [showMenu, setShowMenu] = useState(false);
   const [showReactions, setShowReactions] = useState(false);
   // ✅ FIX: reactions initialized from msg._reactions and persisted on change
@@ -401,9 +439,12 @@ function MessageBubble({ msg, isMe, isFirst, isLast, isGroup, isPinned, canPin, 
         <div className="w-7 shrink-0 self-end">
           {isLast && (
             <Avatar className="w-7 h-7">
-              <AvatarFallback className="text-[10px] font-bold bg-gradient-to-br from-sky-400 to-blue-500 text-white">
-                {getInitials(msg.sender_name || 'Hiker')}
-              </AvatarFallback>
+              {avatarUrl && <img src={avatarUrl} alt="" className="w-full h-full object-cover rounded-full" />}
+              {!avatarUrl && (
+                <AvatarFallback className="text-[10px] font-bold bg-gradient-to-br from-sky-400 to-blue-500 text-white">
+                  {getInitials(msg.sender_name || 'Hiker')}
+                </AvatarFallback>
+              )}
             </Avatar>
           )}
         </div>
@@ -622,9 +663,13 @@ function MembersDialog({ open, onOpenChange, room, currentUserEmail, qc, roomId 
                 return (
                   <div key={email} className="flex items-center gap-2.5 px-3 py-2.5 bg-gray-50 dark:bg-gray-800/60 rounded-xl">
                     <Avatar className="w-8 h-8 shrink-0">
-                      <AvatarFallback className="text-xs font-bold bg-gradient-to-br from-sky-400 to-blue-500 text-white">
-                        {getInitials(name)}
-                      </AvatarFallback>
+                      {participantProfiles[String(email).toLowerCase()]?.avatar_url
+                        ? <img src={participantProfiles[String(email).toLowerCase()].avatar_url} alt="" className="w-full h-full object-cover rounded-full" />
+                        : (
+                          <AvatarFallback className="text-xs font-bold bg-gradient-to-br from-sky-400 to-blue-500 text-white">
+                            {getInitials(name)}
+                          </AvatarFallback>
+                        )}
                     </Avatar>
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-semibold truncate">{name}{isMe ? ' (you)' : ''}</p>
@@ -688,8 +733,8 @@ function MembersDialog({ open, onOpenChange, room, currentUserEmail, qc, roomId 
 // ─── Main ChatRoom ────────────────────────────────────────────────────────────
 export default function ChatRoom() {
   const navigate = useNavigate();
-  const { user } = useAuth();
-  const roomId = window.location.pathname.split('/chat/')[1];
+  const { user, onlineUsers = [] } = useAuth();
+  const { id: roomId } = useParams();
   const qc = useQueryClient();
 
   const [message, setMessage] = useState('');
@@ -738,7 +783,20 @@ export default function ChatRoom() {
       return [...rows].reverse();
     },
     enabled: !!roomId,
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
+    // Fallback when realtime is not enabled / drops: poll while the chat is open and visible
+    refetchInterval: () => (typeof document !== 'undefined' && document.visibilityState === 'visible' ? 4000 : false),
   });
+
+  // Add a message to the cache right away (no duplicate ids), so it shows without leaving the chat
+  const pushMessage = useCallback((row) => {
+    if (!row?.id) return;
+    qc.setQueryData(['messages', roomId], (old = []) =>
+      old.some(m => m.id === row.id) ? old : [...old, row]
+    );
+  }, [qc, roomId]);
 
   // ── Supabase realtime ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -750,7 +808,8 @@ export default function ChatRoom() {
       .on('postgres_changes', {
         event: 'INSERT', schema: 'public', table: 'chat_messages',
         filter: `room_id=eq.${roomId}`,
-      }, () => {
+      }, (payload) => {
+        pushMessage(payload?.new);
         qc.invalidateQueries({ queryKey: ['messages', roomId] });
         qc.invalidateQueries({ queryKey: ['chatrooms', user.email] });
       })
@@ -762,13 +821,16 @@ export default function ChatRoom() {
           .map(p => p.name || 'Hiker');
         setTypingUsers(typers);
       })
-      .subscribe();
+      .subscribe((status) => {
+        // Catch anything sent between the first fetch and the subscription
+        if (status === 'SUBSCRIBED') qc.invalidateQueries({ queryKey: ['messages', roomId] });
+      });
 
     channelRef.current = channel;
     channel.track({ email: user.email, name: user.full_name, typing: false });
 
     return () => { supabase.removeChannel(channel); channelRef.current = null; };
-  }, [roomId, user?.email, qc]);
+  }, [roomId, user?.email, qc, pushMessage]);
 
   // ── Typing indicator broadcast ─────────────────────────────────────────────
   const handleTyping = (val) => {
@@ -821,6 +883,19 @@ export default function ChatRoom() {
   const tripTitle = room?.trip_title || null;
   const memberCount = room?.participants?.length || 0;
 
+  // photos + profile ids of everyone in this chat
+  const { data: participantProfiles = {} } = useQuery({
+    queryKey: ['chat-profiles', roomId, (room?.participants || []).join(',')],
+    queryFn: () => fetchProfilesByEmails(room.participants),
+    enabled: !!room?.participants?.length,
+    staleTime: 5 * 60_000,
+  });
+  const otherEmail = !isGroup
+    ? (room?.participants || []).find(e => String(e).toLowerCase() !== String(user?.email || '').toLowerCase())
+    : null;
+  const otherProfile = otherEmail ? participantProfiles[String(otherEmail).toLowerCase()] : null;
+  const isOtherOnline = !!otherEmail && onlineUsers.some(u => String(u.email || '').toLowerCase() === String(otherEmail).toLowerCase());
+
   const isFirstInGroup = (i) => i === 0 || messages[i].sender_email !== messages[i - 1].sender_email;
   const isLastInGroup = (i) => i === messages.length - 1 || messages[i].sender_email !== messages[i + 1].sender_email;
 
@@ -848,9 +923,13 @@ export default function ChatRoom() {
   };
 
   // ── Media ──────────────────────────────────────────────────────────────────
-  const handleMediaChange = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+  const handleMediaChange = async (e) => {
+    const picked = e.target.files[0];
+    e.target.value = '';
+    if (!picked) return;
+    let file = picked;
+    try { file = await prepareImageFile(picked); }   // iPhone HEIC -> JPEG
+    catch (err) { alert(err.message); return; }
     const isVid = file.type.startsWith('video/');
     const isImg = file.type.startsWith('image/');
     if (!isVid && !isImg) return;
@@ -863,7 +942,6 @@ export default function ChatRoom() {
     } else {
       setMediaPreview(URL.createObjectURL(file));
     }
-    e.target.value = '';
   };
 
   const clearMedia = () => {
@@ -872,7 +950,7 @@ export default function ChatRoom() {
   };
 
   const uploadMedia = async (file) => {
-    const ext = file.name.split('.').pop();
+    const ext = (file.name.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 8) || 'bin';
     const path = `chat-media/${roomId}/${Date.now()}.${ext}`;
     const { error } = await supabase.storage.from('files').upload(path, file, { contentType: file.type });
     if (error) throw error;
@@ -890,15 +968,19 @@ export default function ChatRoom() {
         mType = mediaType; clearMedia();
       }
       const content = buildContent(message.trim(), mediaUrl, mType, replyTo?.id || null);
-      await base44.entities.ChatMessage.create({
+      const created = await base44.entities.ChatMessage.create({
         room_id: roomId, sender_email: user.email,
         sender_name: user.full_name, content, is_read: false,
       });
-      await base44.entities.ChatRoom.update(roomId, {
-        last_message: message.trim() || (mType === 'video' ? '📹 Video' : '📷 Photo'),
-        last_message_time: new Date().toISOString(),
-      });
+      // Show it immediately, before any other request can fail or lag
+      pushMessage(created);
       setMessage(''); setReplyTo(null);
+      try {
+        await base44.entities.ChatRoom.update(roomId, {
+          last_message: message.trim() || (mType === 'video' ? '📹 Video' : '📷 Photo'),
+          last_message_time: new Date().toISOString(),
+        });
+      } catch (e) { console.warn('Room preview update failed:', e); }
       qc.invalidateQueries({ queryKey: ['messages', roomId] });
     } catch (err) { console.error('Send failed:', err); }
     finally { setIsSending(false); setUploading(false); }
@@ -908,20 +990,28 @@ export default function ChatRoom() {
   const handleSendVoice = async (blob, duration) => {
     setIsSending(true);
     try {
-      const file = new File([blob], `voice-${Date.now()}.webm`, { type: 'audio/webm' });
-      const path = `chat-media/${roomId}/${Date.now()}.webm`;
-      await supabase.storage.from('files').upload(path, file, { contentType: 'audio/webm' });
+      const type = blob.type || 'audio/webm';
+      const ext = type.includes('mp4') ? 'm4a' : type.includes('aac') ? 'aac' : 'webm';
+      const path = `chat-media/${roomId}/${Date.now()}.${ext}`;
+      const { error: uploadError } = await supabase.storage.from('files').upload(path, blob, { contentType: type });
+      if (uploadError) throw uploadError;
       const audioUrl = supabase.storage.from('files').getPublicUrl(path).data.publicUrl;
       const content = buildVoiceContent(audioUrl, duration);
-      await base44.entities.ChatMessage.create({
+      const created = await base44.entities.ChatMessage.create({
         room_id: roomId, sender_email: user.email,
         sender_name: user.full_name, content, is_read: false,
       });
-      await base44.entities.ChatRoom.update(roomId, {
-        last_message: '🎤 Voice', last_message_time: new Date().toISOString(),
-      });
+      pushMessage(created);
+      try {
+        await base44.entities.ChatRoom.update(roomId, {
+          last_message: '🎤 Voice', last_message_time: new Date().toISOString(),
+        });
+      } catch (e) { console.warn('Room preview update failed:', e); }
       qc.invalidateQueries({ queryKey: ['messages', roomId] });
-    } catch (err) { console.error('Voice send failed:', err); }
+    } catch (err) {
+      console.error('Voice send failed:', err);
+      alert('Hindi na-send ang voice message. Subukan ulit.');
+    }
     finally { setIsSending(false); }
   };
 
@@ -967,30 +1057,41 @@ export default function ChatRoom() {
           <ArrowLeft className="w-5 h-5" />
         </button>
 
-        <div className="relative shrink-0">
-          <Avatar className="w-10 h-10 ring-2 ring-offset-1 ring-blue-200 dark:ring-blue-900">
-            <AvatarFallback className={`font-bold text-sm ${isGroup ? 'bg-gradient-to-br from-violet-400 to-indigo-500 text-white' : 'bg-gradient-to-br from-sky-400 to-blue-500 text-white'}`}>
-              {isGroup ? <UsersRound className="w-4 h-4" /> : chatName?.[0]?.toUpperCase()}
-            </AvatarFallback>
-          </Avatar>
-          {!isGroup && (
-            <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full ring-2 ring-white dark:ring-gray-900" />
-          )}
-        </div>
+        <button
+          type="button"
+          onClick={() => { if (otherProfile?.id) navigate(`/profile/${otherProfile.id}`); }}
+          disabled={!otherProfile?.id}
+          className="flex items-center gap-3 flex-1 min-w-0 text-left disabled:cursor-default"
+          aria-label={otherProfile?.id ? `Open ${chatName}'s profile` : chatName}
+        >
+          <div className="relative shrink-0">
+            <Avatar className="w-10 h-10 ring-2 ring-offset-1 ring-blue-200 dark:ring-blue-900">
+              {!isGroup && otherProfile?.avatar_url && <img src={otherProfile.avatar_url} alt="" className="w-full h-full object-cover rounded-full" />}
+              {(isGroup || !otherProfile?.avatar_url) && (
+                <AvatarFallback className={`font-bold text-sm ${isGroup ? 'bg-gradient-to-br from-violet-400 to-indigo-500 text-white' : 'bg-gradient-to-br from-sky-400 to-blue-500 text-white'}`}>
+                  {isGroup ? <UsersRound className="w-4 h-4" /> : chatName?.[0]?.toUpperCase()}
+                </AvatarFallback>
+              )}
+            </Avatar>
+            {!isGroup && isOtherOnline && (
+              <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full ring-2 ring-white dark:ring-gray-900" />
+            )}
+          </div>
 
-        <div className="flex-1 min-w-0">
-          <h3 className="font-bold text-sm text-gray-900 dark:text-white truncate leading-tight">{chatName}</h3>
-          {tripTitle ? (
-            <div className="flex items-center gap-1 text-[10px] text-blue-500">
-              <Mountain className="w-2.5 h-2.5" />
-              <span className="truncate">{tripTitle}</span>
-            </div>
-          ) : isGroup ? (
-            <p className="text-[10px] text-gray-400">{memberCount} members</p>
-          ) : (
-            <p className="text-[10px] text-green-500 font-semibold">Active now</p>
-          )}
-        </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="font-bold text-sm text-gray-900 dark:text-white truncate leading-tight">{chatName}</h3>
+            {tripTitle ? (
+              <div className="flex items-center gap-1 text-[10px] text-blue-500">
+                <Mountain className="w-2.5 h-2.5" />
+                <span className="truncate">{tripTitle}</span>
+              </div>
+            ) : isGroup ? (
+              <p className="text-[10px] text-gray-400">{memberCount} members</p>
+            ) : (
+              <p className={`text-[10px] font-semibold ${isOtherOnline ? 'text-green-500' : 'text-gray-400'}`}>{isOtherOnline ? 'Active now' : 'Offline'}</p>
+            )}
+          </div>
+        </button>
 
         <div className="flex items-center gap-1 shrink-0">
           {/* voice / video call buttons removed: they were placeholders that did nothing */}
@@ -1043,9 +1144,7 @@ export default function ChatRoom() {
       {/* ── Messages ── */}
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 py-4 space-y-0" onScroll={handleScroll}>
         {isLoading ? (
-          <div className="flex justify-center py-8">
-            <Loader2 className="w-6 h-6 animate-spin text-gray-300" />
-          </div>
+          <ChatSkeleton />
         ) : (
           messages.map((msg, index) => {
             const isMe = msg.sender_email === user.email;
@@ -1075,6 +1174,7 @@ export default function ChatRoom() {
                   onDelete={handleDelete}
                   onPin={handlePin}
                   allMessages={messages}
+                  avatarUrl={participantProfiles[String(msg.sender_email || '').toLowerCase()]?.avatar_url}
                   isHighlighted={highlightedIdx === index}
                   msgRef={el => { if (el) msgRefs.current[msg.id] = el; }}
                 />

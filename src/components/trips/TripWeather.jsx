@@ -1,3 +1,4 @@
+import { formatDay } from '@/lib/tripDates';
 import { useQuery } from '@tanstack/react-query';
 import { Cloud, Sun, CloudRain, CloudSnow, Wind, Droplets, Loader2, AlertCircle } from 'lucide-react';
 
@@ -134,7 +135,7 @@ export default function TripWeather({ trip }) {
               <p className="font-semibold text-lg">{weather.maxTemp}°C <span className="text-sm text-muted-foreground font-normal">/ {weather.minTemp}°C</span></p>
               <p className="text-sm text-muted-foreground">{weatherDesc(weather.code)}</p>
               <p className="text-xs text-muted-foreground mt-0.5">
-                {tripDate ? `Trip day: ${new Date(tripDate + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}` : 'Current forecast'}
+                {tripDate ? `Trip day: ${formatDay(tripDate, 'en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}` : 'Current forecast'}
               </p>
             </div>
           </div>
@@ -164,7 +165,7 @@ export default function TripWeather({ trip }) {
               {weather.forecast.map((day, i) => (
                 <div key={day.date} className={`text-center p-2 rounded-lg ${i === 0 ? 'bg-primary/10 border border-primary/20' : 'bg-muted'}`}>
                   <p className="text-xs text-muted-foreground mb-1">
-                    {i === 0 ? 'Trip day' : new Date(day.date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'short' })}
+                    {i === 0 ? 'Trip day' : formatDay(day.date, 'en-PH', { weekday: 'short' })}
                   </p>
                   <WeatherIcon code={day.code} className="w-5 h-5 mx-auto mb-1" />
                   <p className="text-xs font-medium">{day.max}°</p>

@@ -1,5 +1,7 @@
 import * as API from '@/api/index';
 import { supabase } from '@/lib/supabase';
+import { removePushToken } from '@/lib/pushNotifications';
+import { prepareImageFile } from '@/lib/prepareImage';
 
 export const base44 = {
   entities: {
@@ -26,7 +28,7 @@ export const base44 = {
   },
   auth: {
     me: API.getCurrentUser,
-    logout: () => supabase.auth.signOut(),
+    logout: async () => { await removePushToken(); return supabase.auth.signOut(); },
     updateMe: async (updates) => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
@@ -45,7 +47,8 @@ export const base44 = {
   },
   integrations: {
     Core: {
-      UploadFile: async ({ file }) => {
+      UploadFile: async ({ file: original }) => {
+        const file = await prepareImageFile(original);
         const ext = (file.name.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 8) || 'bin';
         const path = `uploads/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
         const { error } = await supabase.storage.from('files').upload(path, file, { contentType: file.type });

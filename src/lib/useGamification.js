@@ -186,7 +186,7 @@ export const useUnlockAchievement = () => {
         .single();
       
       // Award XP by updating user's gamification row
-      const totalXp = achievement?.xp_reward + (xpBonus || 0);
+      const totalXp = (achievement?.xp_reward || 0) + (xpBonus || 0);
       const { data: curr } = await supabase
         .from('user_gamification')
         .select('total_xp, current_xp')

@@ -1,6 +1,7 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
+import { startDirectChat } from '@/lib/chatHelpers';
 import { syncLikesCount } from '@/lib/postCounts';
 import { withConquered } from '@/lib/peaks';
 import ComparePeaksDialog from '@/components/profile/ComparePeaksDialog';
@@ -835,17 +836,7 @@ export default function PublicProfile() {
     if (!profile?.email) return;
     setIsMsgLoading(true);
     try {
-      const existing = await base44.entities.ChatRoom.filter({ type: 'direct' });
-      const mine = existing.find(r =>
-        r.participants?.includes(currentUser.email) &&
-        r.participants?.includes(profile.email)
-      );
-      if (mine) { navigate(`/chat/${mine.id}`); return; }
-      const room = await base44.entities.ChatRoom.create({
-        type: 'direct',
-        participants: [currentUser.email, profile.email],
-        participant_names: [currentUser.full_name || currentUser.email, profile.full_name],
-      });
+      const room = await startDirectChat(currentUser, profile);
       navigate(`/chat/${room.id}`);
     } catch (err) {
       console.error('DM error:', err);
@@ -891,7 +882,7 @@ export default function PublicProfile() {
             title: 'New like on your post',
             message: `${currentUser.full_name || currentUser.email} liked your post.`,
             type: 'comment',
-            link: '/',
+            link: `/post/${post.id}`,
             icon: '\u2764\uFE0F',
           });
         }
@@ -1032,28 +1023,16 @@ export default function PublicProfile() {
             </Avatar>
             {!isOwnProfile && (
               <div className="flex items-center gap-1">
-                <Button
-                  variant="outline" size="sm"
-                  className="rounded-full h-7 text-xs px-2"
-                  onClick={handleMessage}
-                  disabled={isMsgLoading}
-                >
-                  {isMsgLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <MessageCircle className="w-3 h-3" />}
-                </Button>
                 <FollowButton targetEmail={profile.email} targetName={profile.full_name} />
               </div>
             )}
           </div>
 
           <h1 className="font-display text-lg font-bold">{profile.full_name}</h1>
-          <p className="text-xs text-muted-foreground">{profile.email}</p>
           {profile.bio && <p className="text-sm text-muted-foreground mt-1 line-clamp-3">{profile.bio}</p>}
 
           {/* Highlight badges */}
           <div className="flex items-center gap-2 flex-wrap mt-3 mb-3">
-            <Badge className="bg-orange-50 text-orange-700 border-0 text-xs animate-pulse">
-              <Flame className="w-2.5 h-2.5 mr-1" /> 7-day streak
-            </Badge>
             <Badge className="bg-primary/10 text-primary border-0 text-xs">
               Lv{profileStats.level}
             </Badge>

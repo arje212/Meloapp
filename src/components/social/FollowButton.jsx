@@ -41,7 +41,7 @@ export default function FollowButton({ targetEmail, targetName }) {
         title: 'New follower',
         message: `${user.full_name || user.email} started following you.`,
         type: 'system',
-        link: '/profile',
+        link: user.id ? `/profile/${user.id}` : '/profile',
         icon: '\uD83D\uDC4B',
       });
     }

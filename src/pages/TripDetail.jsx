@@ -7,6 +7,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
   ArrowLeft, Mountain, CalendarDays, Users, Wallet, Loader2,
@@ -156,6 +157,24 @@ export default function TripDetail() {
   const myMembership      = members.find(m => m.user_email === user?.email);
   const isOrganizer       = user?.email === trip?.organizer_email;
   const canAccessGroupChat= isOrganizer || myMembership?.status === 'going';
+  const [visibilityBusy, setVisibilityBusy] = useState(false);
+  const [visibilityError, setVisibilityError] = useState('');
+  const isPublicTrip = trip?.is_public !== false;
+  // Organizer can switch a personal trip between public and private any time (agency trips stay public)
+  const handleVisibility = async (makePublic) => {
+    setVisibilityBusy(true); setVisibilityError('');
+    try {
+      await base44.entities.Trip.update(trip.id, { is_public: makePublic });
+      await queryClient.invalidateQueries({ queryKey: ['trip', tripId] });
+      queryClient.invalidateQueries({ queryKey: ['trips'] });
+      queryClient.invalidateQueries({ queryKey: ['posts'] });
+    } catch (err) {
+      console.error('Trip visibility update failed:', err);
+      setVisibilityError('Hindi ma-update ang visibility. Subukan ulit.');
+    } finally {
+      setVisibilityBusy(false);
+    }
+  };
   const goingCount        = members.filter(m => m.status === 'going').length;
   const organizerName     = trip?.agency_name || trip?.organizer_name || trip?.organizer_email || 'Unknown organizer';
   const organizerEmail    = trip?.organizer_email;
@@ -523,6 +542,22 @@ export default function TripDetail() {
               ⚠ This trip requires payment. Please upload your GCash receipt below.
             </p>
           )}
+        </div>
+      )}
+
+      {/* ── Visibility ── */}
+      {isOrganizer && !trip?.agency_id && (
+        <div className="bg-card border rounded-2xl p-5 mt-4 flex items-center justify-between gap-4">
+          <div>
+            <h3 className="font-semibold">{isPublicTrip ? 'Public trip' : 'Private trip'}</h3>
+            <p className="text-xs text-muted-foreground">
+              {isPublicTrip
+                ? 'Makikita ng lahat sa Trips at Feed, at puwede silang sumali.'
+                : 'Ikaw at ang mga inimbitahan mo lang ang makakakita.'}
+            </p>
+            {visibilityError && <p className="mt-1 text-xs text-destructive">{visibilityError}</p>}
+          </div>
+          <Switch checked={isPublicTrip} disabled={visibilityBusy} onCheckedChange={handleVisibility} aria-label="Public trip" />
         </div>
       )}
 

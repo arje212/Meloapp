@@ -1,9 +1,11 @@
+import { formatDay, toLocalDate } from '@/lib/tripDates';
+import MapLink from '@/components/MapLink';
 import { useEffect, useState } from 'react';
 import { fetchMyChatRooms } from '@/lib/chatHelpers';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { useAuth } from '@/lib/AuthContext';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -12,7 +14,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
   ArrowLeft, Store, MapPin, Star, CheckCircle, MessageCircle,
-  Mountain, Clock, Users, Loader2, CheckCircle2, Phone,
+  Mountain, Clock, Users, Loader2, CheckCircle2, Phone, Mail,
   LayoutDashboard, AlertTriangle, Check, Info,
   Camera, Shield, Award, Calendar, Globe, Facebook, Instagram,
   ChevronLeft, ChevronRight, X, ZoomIn, ImageOff, ThumbsUp,
@@ -314,7 +316,7 @@ function ScheduleTab({ packages, bookingsByPkg = {} }) {
   }).sort((a, b) => a.trip_date.localeCompare(b.trip_date));
   if (!allTrips.length) return <div className="rounded-2xl border border-dashed border-border bg-muted/30 p-10 text-center"><Calendar className="w-8 h-8 text-muted-foreground mx-auto mb-2" /><p className="text-sm font-medium text-muted-foreground">No upcoming trips scheduled</p></div>;
   const byMonth = {};
-  allTrips.forEach(trip => { const d = new Date(trip.trip_date + 'T00:00:00'); const key = d.toLocaleDateString('en-PH', { year: 'numeric', month: 'long' }); if (!byMonth[key]) byMonth[key] = []; byMonth[key].push(trip); });
+  allTrips.forEach(trip => { const key = formatDay(trip.trip_date, 'en-PH', { year: 'numeric', month: 'long' }); if (!byMonth[key]) byMonth[key] = []; byMonth[key].push(trip); });
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
@@ -327,7 +329,7 @@ function ScheduleTab({ packages, bookingsByPkg = {} }) {
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{month}</p>
           <div className="space-y-2">
             {trips.map((trip, i) => {
-              const d = new Date(trip.trip_date + 'T00:00:00');
+              const d = toLocalDate(trip.trip_date) || new Date();
               const fillPct = trip.max_pax ? Math.round((trip.bookedCount / trip.max_pax) * 100) : 0;
               return (
                 <div key={i} className={`bg-card border rounded-xl p-3 flex items-center gap-3 ${trip.isFull ? 'opacity-60' : ''}`}>
@@ -434,7 +436,7 @@ export default function AgencyDetail() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { user } = useAuth();
-  const agencyId = window.location.pathname.split('/agencies/')[1];
+  const { id: agencyId } = useParams();
   const sharedPackageId = searchParams.get('package');
 
   const [bookingPkg, setBookingPkg] = useState(null);
@@ -726,12 +728,18 @@ export default function AgencyDetail() {
               </>}
             </div>
           </div>
-          {agency.description && <p className="text-sm text-muted-foreground mt-4 leading-relaxed">{agency.description}</p>}
-          {(agency.website || agency.facebook_url || agency.instagram_url || agency.contact_phone) && (
+          {agency.description && (
+            <div className="mt-4">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">About us</p>
+              <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line">{agency.description}</p>
+            </div>
+          )}
+          {(agency.website || agency.facebook_url || agency.instagram_url || agency.contact_phone || agency.contact_email) && (
             <div className="flex flex-wrap gap-3 mt-4 pt-4 border-t border-border">
               {agency.website && <a href={agency.website} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"><Globe className="w-3.5 h-3.5" />Website</a>}
               {agency.facebook_url && <a href={agency.facebook_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"><Facebook className="w-3.5 h-3.5" />Facebook</a>}
               {agency.instagram_url && <a href={agency.instagram_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"><Instagram className="w-3.5 h-3.5" />Instagram</a>}
+              {agency.contact_email && <a href={`mailto:${agency.contact_email}`} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"><Mail className="w-3.5 h-3.5" />{agency.contact_email}</a>}
               {agency.contact_phone && <a href={`tel:${agency.contact_phone}`} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"><Phone className="w-3.5 h-3.5" />{agency.contact_phone}</a>}
             </div>
           )}
@@ -808,7 +816,7 @@ export default function AgencyDetail() {
                         </div>
                       )}
                       {nextDate && (
-                        <p className="text-xs text-green-600 font-medium mt-2">Next date: {new Date(nextDate + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                        <p className="text-xs text-green-600 font-medium mt-2">Next date: {formatDay(nextDate, 'en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
                       )}
                       {pkg.nature_spots?.length > 0 && (
                         <div className="text-xs text-muted-foreground mt-2">
@@ -819,7 +827,7 @@ export default function AgencyDetail() {
                       {maxPax && nextDate && (
                         <div className="mt-3 space-y-1">
                           <div className="flex justify-between text-[10px] text-muted-foreground">
-                            <span>{bookedOnNextDate}/{maxPax} booked{nextDate && <span className="ml-1 text-muted-foreground/70">on {new Date(nextDate + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}</span>}</span>
+                            <span>{bookedOnNextDate}/{maxPax} booked{nextDate && <span className="ml-1 text-muted-foreground/70">on {formatDay(nextDate, 'en-PH', { month: 'short', day: 'numeric' })}</span>}</span>
                             <span>{fillPct}%</span>
                           </div>
                           <div className="w-full h-1.5 rounded-full bg-muted overflow-hidden">
@@ -910,6 +918,10 @@ export default function AgencyDetail() {
                 <div className="bg-muted/50 rounded-lg p-2"><p className="text-muted-foreground text-xs">Price</p><p className="font-semibold text-lg text-primary">P{pkgDetailsView.price?.toLocaleString()}</p></div>
               </div>
 
+              {pkgDetailsView.mountain_name && (
+                <MapLink name={pkgDetailsView.mountain_name} className="w-full" />
+              )}
+
               {pkgDetailsView.description && (
                 <div className="space-y-2">
                   <p className="font-semibold text-sm">Description</p>
@@ -943,7 +955,7 @@ export default function AgencyDetail() {
               {pkgDetailsView.available_dates?.length > 0 && (
                 <div className="space-y-2">
                   <p className="font-semibold text-sm">Available Dates</p>
-                  <p className="text-sm text-muted-foreground">{pkgDetailsView.available_dates.slice(0, 5).map(d => new Date(d + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })).join(', ')}{pkgDetailsView.available_dates.length > 5 ? '...' : ''}</p>
+                  <p className="text-sm text-muted-foreground">{pkgDetailsView.available_dates.slice(0, 5).map(d => formatDay(d, 'en-PH', { month: 'short', day: 'numeric' })).filter(Boolean).join(', ')}{pkgDetailsView.available_dates.length > 5 ? '...' : ''}</p>
                 </div>
               )}
 
@@ -1066,7 +1078,7 @@ export default function AgencyDetail() {
                             <SelectItem key={d} value={d} disabled={full}>
                               <div className="flex items-center gap-2">
                                 <span className={`w-2 h-2 rounded-full shrink-0 ${full ? 'bg-red-500' : slots !== null && slots <= 2 ? 'bg-amber-400' : 'bg-emerald-500'}`} />
-                                <span>{new Date(d + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'short', year: 'numeric', month: 'long', day: 'numeric' })}</span>
+                                <span>{formatDay(d, 'en-PH', { weekday: 'short', year: 'numeric', month: 'long', day: 'numeric' })}</span>
                                 {Number(bookingPkg?.max_pax) > 0 && <span className={`text-[10px] font-semibold ml-auto ${full ? 'text-red-600' : slots <= 2 ? 'text-amber-600' : 'text-emerald-600'}`}>{full ? 'FULL' : `${slots} left`}</span>}
                               </div>
                             </SelectItem>
@@ -1160,18 +1172,23 @@ export default function AgencyDetail() {
               </div>
 
               {/* Show GCash Account if GCash is selected and agency has GCash details */}
-              {bookForm.payment_method === 'gcash' && agency?.gcash_number && (
+              {bookForm.payment_method === 'gcash' && (agency?.gcash_qr_url || agency?.gcash_number) && (
                 <div className="bg-gradient-to-br from-blue-500 to-blue-700 text-white rounded-xl p-4">
-                  <p className="text-xs font-medium opacity-80 mb-1">I-send ang payment sa</p>
-                  <p className="text-2xl font-bold tracking-widest">{agency.gcash_number}</p>
-                  <p className="text-sm opacity-90 mt-0.5">{agency.gcash_name}</p>
+                  <p className="text-xs font-medium opacity-80 mb-2">{agency?.gcash_qr_url ? 'I-scan gamit ang GCash app' : 'I-send ang payment sa'}</p>
+                  {agency?.gcash_qr_url ? (
+                    // QR only: the personal mobile number is not shown to customers
+                    <img src={agency.gcash_qr_url} alt="GCash QR code" className="mx-auto w-52 max-w-full rounded-xl bg-white p-2" />
+                  ) : (
+                    <p className="text-2xl font-bold tracking-widest">{agency.gcash_number}</p>
+                  )}
+                  <p className="text-sm opacity-90 mt-2 text-center">{agency.gcash_name}</p>
                   <div className="mt-3 pt-3 border-t border-white/20">
                     <p className="text-xs opacity-80">Downpayment Amount</p>
                     <p className="text-xl font-bold">₱{downpayment.toLocaleString()}</p>
                   </div>
                 </div>
               )}
-              {bookForm.payment_method === 'gcash' && !agency?.gcash_number && (
+              {bookForm.payment_method === 'gcash' && !agency?.gcash_number && !agency?.gcash_qr_url && (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 flex items-start gap-2">
                   <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
                   <div className="text-sm text-amber-900">

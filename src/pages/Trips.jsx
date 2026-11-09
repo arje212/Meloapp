@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { format } from 'date-fns';
 import { Link, useNavigate } from 'react-router-dom';
 import { isTripExpired } from '@/lib/tripDates';
+import { CardGridSkeleton } from '@/components/Skeletons';
 
 const statusColors = {
   planning: 'bg-blue-100 text-blue-700',
@@ -124,9 +125,7 @@ export default function Trips() {
       )}
 
       {isLoading ? (
-        <div className="flex justify-center py-16">
-          <Loader2 className="w-8 h-8 animate-spin text-primary" />
-        </div>
+        <CardGridSkeleton count={4} />
       ) : filtered.length === 0 ? (
         <div className="text-center py-16">
           <CalendarDays className="w-16 h-16 text-muted-foreground/30 mx-auto mb-4" />

@@ -71,7 +71,7 @@ export default function CreateTrip() {
         current_participants: 1,
         difficulty:       form.difficulty    || null,
         price:            form.price ? Number(form.price) : null,
-        is_public:        isAgencyTrip ? true : false,
+        is_public:        isAgencyTrip ? true : !!form.is_public,
         status:           'open',
       });
 
@@ -189,16 +189,23 @@ export default function CreateTrip() {
           </Select>
         </div>
 
-        <div className="flex items-center justify-between py-2">
+        <div className="flex items-center justify-between gap-4 py-2">
           <div>
-            <Label>{isAgencyTrip ? 'Public Agency Trip' : 'Private User Trip'}</Label>
+            <Label htmlFor="trip-public">{isAgencyTrip || form.is_public ? 'Public trip' : 'Private trip'}</Label>
             <p className="text-xs text-muted-foreground">
               {isAgencyTrip
                 ? 'Agency trips are automatically visible to everyone.'
-                : 'Personal user trips are private by default.'}
+                : form.is_public
+                  ? 'Makikita ng lahat sa Trips at Feed, at puwede silang sumali.'
+                  : 'Ikaw at ang mga inimbitahan mo lang ang makakakita.'}
             </p>
           </div>
-          <Switch checked={isAgencyTrip ? true : false} disabled />
+          <Switch
+            id="trip-public"
+            checked={isAgencyTrip ? true : !!form.is_public}
+            disabled={isAgencyTrip}
+            onCheckedChange={(v) => updateField('is_public', v)}
+          />
         </div>
 
         {/* Info about auto group chat */}

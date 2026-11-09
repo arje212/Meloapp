@@ -35,7 +35,7 @@ export default function RoadmapHeader({
       <div className="p-5 flex items-center gap-4">
         <SummitRing conquered={conquered} total={total} />
         <div className="min-w-0 flex-1">
-          <h1 className="font-display text-xl font-bold leading-snug line-clamp-2">{title}</h1>
+          <h1 className={`font-display font-bold leading-snug break-words ${String(title || '').length > 22 ? 'text-lg' : 'text-xl'}`}>{title}</h1>
           {nextDest ? (
             <p className="text-sm text-white/70 mt-1 leading-snug">
               Next climb: <span className="text-white font-medium">{nextDest.name}</span>

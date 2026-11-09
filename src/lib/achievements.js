@@ -122,7 +122,12 @@ export const ACHIEVEMENT_DEFINITIONS = {
   },
 };
 
+const unlocking = new Set(); // calls running right now (stops the same badge being created twice at once)
+
 export async function unlockAchievement(userEmail, userName, achievementKey) {
+  const lockKey = `${userEmail}:${achievementKey}`;
+  if (unlocking.has(lockKey)) return null;
+  unlocking.add(lockKey);
   try {
     // Check if already unlocked
     const existing = await base44.entities.Achievement.filter({
@@ -155,6 +160,8 @@ export async function unlockAchievement(userEmail, userName, achievementKey) {
   } catch (e) {
     console.error('Achievement unlock failed', e);
     return null;
+  } finally {
+    unlocking.delete(lockKey);
   }
 }
 

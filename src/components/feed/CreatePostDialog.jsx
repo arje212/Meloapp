@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { ImagePlus, MapPin, Loader2, X, Film, Images, Globe, Users, Lock, Smile, Star, AlertTriangle } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { prepareImageFile } from '@/lib/prepareImage';
 import { useAuth } from '@/lib/AuthContext';
 import { useQuery } from '@tanstack/react-query';
 import { unlockAchievement } from '@/lib/achievements';
@@ -67,11 +68,14 @@ export default function CreatePostDialog({ open, onOpenChange, onCreated, initia
     },
   });
 
-  const uploadFile = async (file) => {
+  const uploadFile = async (original) => {
+    const file = await prepareImageFile(original); // iPhone HEIC -> JPEG so everyone can see it
     const isVideo = file.type.startsWith('video/');
     const isImage = file.type.startsWith('image/');
     if (!isImage && !isVideo) throw new Error('Please choose an image or video file.');
-    const path = `uploads/${Date.now()}_${file.name}`;
+    // spaces / emoji / symbols in a file name can make the storage key invalid
+    const safeName = file.name.normalize('NFKD').replace(/[^a-zA-Z0-9._-]/g, '_').slice(-80) || 'file';
+    const path = `uploads/${Date.now()}_${safeName}`;
     const { error: uploadError } = await supabase.storage.from('files').upload(path, file, { contentType: file.type });
     if (uploadError) throw uploadError;
     const { data } = supabase.storage.from('files').getPublicUrl(path);

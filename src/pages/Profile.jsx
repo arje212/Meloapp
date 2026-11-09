@@ -10,6 +10,9 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import ImageCropDialog from '@/components/ImageCropDialog';
+import { fetchProfilesByEmails } from '@/lib/profileLookup';
+import { prepareImageFile, isHeic } from '@/lib/prepareImage';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Mountain, CalendarDays, MapPin, Settings, LogOut, Loader2, Store, Users, CreditCard, Trophy, Bell, Star, UserCheck, LayoutDashboard, Map, Wallet, Receipt, Camera, Shield } from 'lucide-react';
@@ -17,7 +20,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import PostCard from '@/components/feed/PostCard';
 import CommentsSheet from '@/components/feed/CommentsSheet';
 import TripReviewDialog from '@/components/trips/TripReviewDialog';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { calcLevel } from '@/lib/achievements';
 
 const bookingStatusColors = {
@@ -35,6 +38,9 @@ export default function Profile() {
   const { user, checkUserAuth } = useAuth();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  // /profile?tab=bookings (used by the booking email) opens that tab
+  const initialTab = ['posts', 'saved', 'trips', 'bookings'].includes(searchParams.get('tab')) ? searchParams.get('tab') : 'posts';
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [busyBookingId, setBusyBookingId] = useState(null);
   const [saveError, setSaveError] = useState('');
@@ -115,6 +121,34 @@ export default function Profile() {
     enabled: !!user?.email,
   });
 
+  // names, photos and profile links for the people in the follow lists
+  const followEmails = [...following.map(f => f.following_email), ...followers.map(f => f.follower_email)];
+  const { data: followProfiles = {} } = useQuery({
+    queryKey: ['follow-profiles', followEmails.slice().sort().join(',')],
+    queryFn: () => fetchProfilesByEmails(followEmails),
+    enabled: followEmails.length > 0,
+    staleTime: 60_000,
+  });
+  const renderPerson = (key, email, fallbackName, tint) => {
+    const p = followProfiles[String(email || '').toLowerCase()];
+    const name = p?.full_name || fallbackName || 'Hiker';
+    const body = (
+      <>
+        <div className={`w-10 h-10 rounded-full ${tint} flex items-center justify-center shrink-0 overflow-hidden`}>
+          {p?.avatar_url
+            ? <img src={p.avatar_url} alt="" className="w-full h-full object-cover" />
+            : <span className="text-sm font-bold text-primary">{name[0]?.toUpperCase() || '?'}</span>}
+        </div>
+        <p className="flex-1 min-w-0 text-sm font-medium truncate">{name}</p>
+      </>
+    );
+    return p?.id ? (
+      <Link key={key} to={`/profile/${p.id}`} className="bg-card border rounded-xl p-3 flex items-center gap-3 hover:bg-muted/50 transition-colors">{body}</Link>
+    ) : (
+      <div key={key} className="bg-card border rounded-xl p-3 flex items-center gap-3">{body}</div>
+    );
+  };
+
   const reviewedTripIds = new Set(myReviews.map(r => r.trip_id));
   const completedTrips = myTrips.filter(t => t.status === 'completed' && !reviewedTripIds.has(t.id));
 
@@ -164,21 +198,34 @@ export default function Profile() {
     }
   };
 
+  // 1) pick a photo (HEIC is converted)  2) crop/zoom  3) upload the cropped copy
+  const [cropSrc, setCropSrc] = useState(null);
   const handleAvatarChange = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith('image/') || file.size > 5 * 1024 * 1024) {
-      setSaveError('Choose an image up to 5MB.');
+    const picked = e.target.files?.[0];
+    e.target.value = '';
+    if (!picked) return;
+    if ((!picked.type.startsWith('image/') && !isHeic(picked)) || picked.size > 30 * 1024 * 1024) {
+      setSaveError('Choose a photo up to 30MB.');
       return;
     }
     setSaveError('');
+    try {
+      const file = await prepareImageFile(picked);
+      setCropSrc(URL.createObjectURL(file));
+    } catch (err) {
+      setSaveError(err.message);
+    }
+  };
+  const closeCrop = () => { if (cropSrc) URL.revokeObjectURL(cropSrc); setCropSrc(null); };
+  const handleCropped = async (blob) => {
     setAvatarUploading(true);
     try {
-      const url = await uploadFile(file, 'avatars');
+      const url = await uploadFile(new File([blob], 'avatar.jpg', { type: 'image/jpeg' }), 'avatars');
       setEditForm(p => ({ ...p, avatar_url: url }));
+      closeCrop();
     } catch (err) {
       console.error('Avatar upload failed:', err);
-      setSaveError('Upload failed. Please try again.');
+      throw new Error('Upload failed. Please try again.');
     } finally {
       setAvatarUploading(false);
     }
@@ -279,12 +326,18 @@ export default function Profile() {
                 <div><Label>Bio</Label><Textarea value={editForm.bio} onChange={e => setEditForm(p => ({ ...p, bio: e.target.value }))} placeholder="Tell us about yourself..." className="mt-1" /></div>
                 <div><Label>Location</Label><Input value={editForm.location} onChange={e => setEditForm(p => ({ ...p, location: e.target.value }))} placeholder="e.g. Manila, Philippines" className="mt-1" /></div>
                 {saveError && <p className="text-xs text-destructive">{saveError}</p>}
+                {cropSrc && <ImageCropDialog src={cropSrc} onCancel={closeCrop} onDone={handleCropped} title="I-crop ang profile photo" />}
                 <Button className="w-full rounded-full" onClick={handleSaveProfile} disabled={isSaving || avatarUploading}>
                   {isSaving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null} Save
                 </Button>
               </div>
             </DialogContent>
           </Dialog>
+          <Link to="/settings">
+            <Button variant="outline" className="rounded-full h-9 text-xs px-3" size="sm">
+              <Settings className="w-3.5 h-3.5 mr-1" /> Settings
+            </Button>
+          </Link>
           <Button variant="outline" className="rounded-full h-9 text-xs px-3" size="sm" onClick={() => base44.auth.logout()}>
             <LogOut className="w-3.5 h-3.5 mr-1" /> Logout
           </Button>
@@ -360,7 +413,7 @@ export default function Profile() {
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue="posts" onValueChange={(value) => {
+      <Tabs defaultValue={initialTab} onValueChange={(value) => {
         if (value === 'roadmap') {
           navigate('/roadmap');
         }
@@ -576,33 +629,13 @@ export default function Profile() {
           ) : (
             <div className="space-y-2">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">People You Follow</p>
-              {following.map(f => (
-                <div key={f.id} className="bg-card border rounded-xl p-3 flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                    <span className="text-sm font-bold text-primary">{f.following_name?.[0] || '?'}</span>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{f.following_name}</p>
-                    <p className="text-xs text-muted-foreground truncate">{f.following_email}</p>
-                  </div>
-                </div>
-              ))}
+              {following.map(f => renderPerson(f.id, f.following_email, f.following_name, 'bg-primary/10'))}
             </div>
           )}
           {followers.length > 0 && (
             <div className="mt-4 space-y-2">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Your Followers</p>
-              {followers.map(f => (
-                <div key={f.id} className="bg-card border rounded-xl p-3 flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-full bg-secondary/20 flex items-center justify-center shrink-0">
-                    <span className="text-sm font-bold text-secondary">{f.follower_name?.[0] || '?'}</span>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{f.follower_name}</p>
-                    <p className="text-xs text-muted-foreground truncate">{f.follower_email}</p>
-                  </div>
-                </div>
-              ))}
+              {followers.map(f => renderPerson(f.id, f.follower_email, f.follower_name, 'bg-secondary/20'))}
             </div>
           )}
         </TabsContent>

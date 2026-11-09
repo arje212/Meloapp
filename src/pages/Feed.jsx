@@ -4,14 +4,37 @@ import { useQuery, useQueryClient, useInfiniteQuery } from '@tanstack/react-quer
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { PenSquare, Loader2, Compass, Image, Film, Smile, RefreshCw } from 'lucide-react';
+import { PenSquare, Compass, Image, Film, Smile, RefreshCw, Search } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { formatDistanceToNow } from 'date-fns';
 import PostCard from '@/components/feed/PostCard';
 import CreatePostDialog from '@/components/feed/CreatePostDialog';
 import CommentsSheet from '@/components/feed/CommentsSheet';
 import { useAuth } from '@/lib/AuthContext';
 import { isTripExpired } from '@/lib/tripDates';
+import { FeedSkeleton } from '@/components/Skeletons';
 
 const PAGE_SIZE = 15;
+
+// Last feed page is kept on the device so the feed appears instantly on app open,
+// then quietly refreshes. Skeletons only show the very first time.
+const FEED_CACHE_KEY = 'melotrip.feed.v1';
+const readFeedCache = (tab) => {
+  if (tab !== 'all') return undefined;
+  try {
+    const raw = localStorage.getItem(FEED_CACHE_KEY);
+    if (!raw) return undefined;
+    const page = JSON.parse(raw);
+    return page?.posts?.length ? { pages: [page], pageParams: [0] } : undefined;
+  } catch { return undefined; }
+};
+const writeFeedCache = (tab, data) => {
+  if (tab !== 'all') return;
+  try {
+    const first = data?.pages?.[0];
+    if (first?.posts?.length) localStorage.setItem(FEED_CACHE_KEY, JSON.stringify({ posts: first.posts.slice(0, 8), nextPage: first.nextPage }));
+  } catch { /* storage full / unavailable */ }
+};
 
 // Filter tabs
 const TABS = [
@@ -111,7 +134,10 @@ async function fetchPostsPage({ pageParam = 0, tab = 'all' }) {
 
 // ── Story Viewer (full-screen) ────────────────────────────────────────────────
 function StoryViewer({ authorId, authorName, avatarUrl, onClose }) {
+  const navigate = useNavigate();
+  const { user } = useAuth();
   const [posts, setPosts] = useState([]);
+  const [imgBroken, setImgBroken] = useState(false);
   const [index, setIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [progress, setProgress] = useState(0);
@@ -122,14 +148,15 @@ function StoryViewer({ authorId, authorName, avatarUrl, onClose }) {
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     supabase
       .from('posts')
-      .select('id, content, image_url, post_images, post_type, is_reel, created_date, mountain_name')
+      .select('id, content, image_url, media_type, post_images, post_type, is_reel, created_date, mountain_name')
       .eq('author_id', authorId)
       .eq('status', 'active')
       .gte('created_date', since)
       .order('created_date', { ascending: false })
       .limit(10)
       .then(({ data }) => {
-        setPosts(data || []);
+        // newest 10, shown oldest -> newest so the newest story is last (on the right), like Instagram
+        setPosts([...(data || [])].reverse());
         setLoading(false);
       });
   }, [authorId]);
@@ -164,6 +191,9 @@ function StoryViewer({ authorId, authorName, avatarUrl, onClose }) {
 
   const current = posts[index];
   const mediaUrl = current?.image_url || current?.post_images?.[0] || null;
+  const isVideo = !!mediaUrl && (current?.media_type === 'video' || current?.is_reel || /\.(mp4|mov|webm|m4v)(\?|#|$)/i.test(mediaUrl));
+  useEffect(() => { setImgBroken(false); }, [index]);
+  const openProfile = () => { onClose(); navigate(authorId === user?.id ? '/profile' : `/profile/${authorId}`); };
   const initials = authorName?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '?';
 
   return (
@@ -187,18 +217,25 @@ function StoryViewer({ authorId, authorName, avatarUrl, onClose }) {
 
         {/* Header */}
         <div className="absolute top-5 left-0 right-0 z-20 flex items-center gap-2 px-3 pt-2">
-          <div className="w-9 h-9 rounded-full border-2 border-white overflow-hidden shrink-0">
-            {avatarUrl
-              ? <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
-              : <div className="w-full h-full bg-primary/80 flex items-center justify-center text-white text-xs font-bold">{initials}</div>
-            }
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-white font-semibold text-sm leading-tight">{authorName}</p>
-            {current?.mountain_name && (
-              <p className="text-white/70 text-[10px]">📍 {current.mountain_name}</p>
-            )}
-          </div>
+          <button type="button" onClick={openProfile} className="flex items-center gap-2 flex-1 min-w-0 text-left" aria-label={`Open ${authorName}'s profile`}>
+            <div className="w-9 h-9 rounded-full border-2 border-white overflow-hidden shrink-0">
+              {avatarUrl
+                ? <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
+                : <div className="w-full h-full bg-primary/80 flex items-center justify-center text-white text-xs font-bold">{initials}</div>
+              }
+            </div>
+            <div className="min-w-0">
+              <p className="text-white font-semibold text-sm leading-tight truncate">
+                {authorName}
+                {current?.created_date && (
+                  <span className="text-white/70 font-normal text-xs ml-2">{formatDistanceToNow(new Date(current.created_date), { addSuffix: false })}</span>
+                )}
+              </p>
+              {current?.mountain_name && (
+                <p className="text-white/70 text-[10px]">📍 {current.mountain_name}</p>
+              )}
+            </div>
+          </button>
           <button onClick={onClose} className="text-white/80 hover:text-white p-1">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -215,8 +252,12 @@ function StoryViewer({ authorId, authorName, avatarUrl, onClose }) {
           <div className="w-full h-full flex flex-col items-center justify-center text-white/60 gap-2">
             <p className="text-sm">Walang story sa last 24 hours</p>
           </div>
+        ) : mediaUrl && isVideo ? (
+          <video key={mediaUrl} src={mediaUrl} className="w-full h-full object-contain bg-black" autoPlay muted loop playsInline />
+        ) : mediaUrl && imgBroken ? (
+          <div className="w-full h-full flex items-center justify-center text-white/70 text-sm px-8 text-center">Hindi ma-display ang larawan</div>
         ) : mediaUrl ? (
-          <img src={mediaUrl} alt="" className="w-full h-full object-cover" />
+          <img src={mediaUrl} alt="" className="w-full h-full object-cover" onError={() => setImgBroken(true)} />
         ) : (
           <div className="w-full h-full bg-gradient-to-br from-primary/80 to-green-600 flex items-center justify-center p-6">
             <p className="text-white text-center text-lg font-semibold leading-relaxed">{current?.content}</p>
@@ -436,7 +477,12 @@ export default function Feed() {
     getNextPageParam: (lastPage) => lastPage.nextPage,
     staleTime: 2 * 60 * 1000,
     refetchOnWindowFocus: false, // coming back from Share / the keyboard used to reload the feed
+    initialData: () => readFeedCache(activeTab),
+    initialDataUpdatedAt: 0, // cached data shows at once but is treated as stale -> refreshes in background
+    networkMode: 'offlineFirst',
   });
+
+  useEffect(() => { writeFeedCache(activeTab, data); }, [activeTab, data]);
 
   const posts = data?.pages.flatMap(p => p.posts) ?? [];
 
@@ -462,6 +508,18 @@ export default function Feed() {
 
   const { pulling, pullY } = usePullToRefresh(handleRefresh);
 
+  // Tapping the Feed tab while already on Feed: jump to the newest post and refresh
+  useEffect(() => {
+    const onFeedTap = () => {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      document.querySelector('main')?.scrollTo?.({ top: 0, behavior: 'smooth' });
+      handleRefresh();
+      queryClient.invalidateQueries({ queryKey: ['stories-bar'] });
+    };
+    window.addEventListener('melotrip:feed-refresh', onFeedTap);
+    return () => window.removeEventListener('melotrip:feed-refresh', onFeedTap);
+  }, [handleRefresh, queryClient]);
+
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ['posts', activeTab] });
     queryClient.invalidateQueries({ queryKey: ['stories-bar'] });
@@ -477,7 +535,7 @@ export default function Feed() {
     : '?';
 
   return (
-    <div className="w-full max-w-2xl mx-auto px-0 py-0 sm:px-4 sm:py-5">
+    <div className="w-full max-w-2xl mx-auto px-0 py-0 sm:px-4 sm:py-5 overflow-x-hidden">
 
     {/* Pull to refresh indicator */}
     {(pulling || isRefreshing) && (
@@ -488,6 +546,14 @@ export default function Feed() {
         <RefreshCw className={`w-5 h-5 text-primary ${isRefreshing ? 'animate-spin' : ''}`} />
       </div>
     )}
+
+    {/* Top bar with Search (people, agencies, mountains) */}
+    <div className="flex items-center justify-between px-4 pt-3 sm:px-0 sm:pt-0">
+      <span className="font-display text-xl font-bold text-foreground md:invisible">Melotrip</span>
+      <Link to="/search" aria-label="Search" className="w-10 h-10 rounded-full bg-muted hover:bg-muted/70 flex items-center justify-center">
+        <Search className="w-5 h-5" />
+      </Link>
+    </div>
 
     {/* Stories Bar */}
     <div className="px-3 pt-3 sm:px-0 sm:pt-0">
@@ -551,10 +617,8 @@ export default function Feed() {
 
       {/* Posts */}
       {isLoading ? (
-        <div className="flex justify-center py-16">
-          <Loader2 className="w-8 h-8 animate-spin text-primary" />
-        </div>
-      ) : error ? (
+        <FeedSkeleton count={3} />
+      ) : error && posts.length === 0 ? (
         <div className="text-center py-12 text-destructive text-sm">
           Error loading posts: {error.message}
         </div>
@@ -583,9 +647,7 @@ export default function Feed() {
 
           {/* Infinite scroll loader */}
           <div ref={loaderRef} className="flex justify-center py-4 px-3 sm:px-0">
-            {isFetchingNextPage && (
-              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-            )}
+            {isFetchingNextPage && <FeedSkeleton count={1} />}
             {!hasNextPage && posts.length > 0 && (
               <p className="text-xs text-muted-foreground">You've seen all posts.</p>
             )}
