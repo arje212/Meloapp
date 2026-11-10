@@ -196,8 +196,8 @@ export default function CreateTrip() {
               {isAgencyTrip
                 ? 'Agency trips are automatically visible to everyone.'
                 : form.is_public
-                  ? 'Makikita ng lahat sa Trips at Feed, at puwede silang sumali.'
-                  : 'Ikaw at ang mga inimbitahan mo lang ang makakakita.'}
+                  ? 'Everyone can see it in Trips and the Feed, and can join.'
+                  : 'Only you and the people you invite can see it.'}
             </p>
           </div>
           <Switch

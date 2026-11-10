@@ -7,8 +7,8 @@ android {
         applicationId "com.melotrip.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 18        // ← dagdagan ng 1 bawat update
-        versionName "2.7"    // ← palitan ng bagong version
+        versionCode 15        // ← dagdagan ng 1 bawat update
+        versionName "2.4"    // ← palitan ng bagong version
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
@@ -49,4 +49,9 @@ try {
     }
 } catch(Exception e) {
     logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}
+
+// Push notifications need Firebase. Without google-services.json the build still works but push will not.
+if (!file('google-services.json').exists()) {
+    logger.warn('WARNING: android/app/google-services.json is missing - push notifications will not work. See PUSH_SETUP.md.')
 }

@@ -325,8 +325,8 @@ export default function AdminBookings() {
                   <div className="rounded-xl border border-dashed bg-muted flex flex-col items-center justify-center py-6 gap-2">
                     <Receipt className="w-8 h-8 text-muted-foreground/40" />
                     <p className="text-xs text-muted-foreground text-center">
-                      Walang receipt image na na-upload ang agency.<br />
-                      Pwede mo pa ring i-confirm kung natanggap mo na ang GCash payment.
+                      The agency has not uploaded a receipt image.<br />
+                      You can still confirm if you have received the GCash payment.
                     </p>
                   </div>
                 )}
@@ -356,7 +356,7 @@ export default function AdminBookings() {
               )}
 
               <p className="text-xs bg-blue-50 border border-blue-200 rounded-xl px-3 py-2 text-blue-800">
-                ✅ I-verify ang receipt bago i-confirm. Kapag na-confirm, matatanggap ng agency ang notification na natanggap mo na ang commission.
+                ✅ Verify the receipt before confirming. Once confirmed, the agency is notified that you received the commission.
               </p>
 
               <div className="flex gap-2">

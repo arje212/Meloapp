@@ -250,7 +250,7 @@ export default function Chat() {
       navigate(`/chat/${room.id}`);
     } catch (err) {
       console.error('Start chat failed:', err);
-      setStartError('Hindi ma-open ang chat. Subukan ulit.');
+      setStartError('Could not open the chat. Please try again.');
     } finally {
       setStartingChatWith(null);
     }
@@ -401,7 +401,7 @@ export default function Chat() {
                   <ListSkeleton rows={3} />
                 ) : newPeople.length === 0 ? (
                   <p className="px-3 py-3 text-sm text-gray-400">
-                    {filteredRooms.length === 0 ? `Walang nakita para sa "${searchQuery.trim()}".` : 'Walang ibang tao na tugma.'}
+                    {filteredRooms.length === 0 ? `No results for "${searchQuery.trim()}".` : 'No other matching people.'}
                   </p>
                 ) : (
                   <div className="space-y-0.5">
@@ -420,7 +420,7 @@ export default function Chat() {
                         </Avatar>
                         <div className="flex-1 min-w-0">
                           <p className="font-semibold text-[15px] text-gray-900 dark:text-white truncate">{p.full_name}</p>
-                          <p className="text-xs text-gray-400 flex items-center gap-1"><UserRound className="w-3 h-3" /> I-tap para mag-chat</p>
+                          <p className="text-xs text-gray-400 flex items-center gap-1"><UserRound className="w-3 h-3" /> Tap to chat</p>
                         </div>
                         {startingChatWith === p.id
                           ? <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
@@ -478,7 +478,7 @@ export default function Chat() {
                   ))}
                 </div>
               )}
-              <Input value={memberQuery} onChange={e => setMemberQuery(e.target.value)} placeholder="Hanapin ang pangalan..." className="mt-1.5 rounded-xl" />
+              <Input value={memberQuery} onChange={e => setMemberQuery(e.target.value)} placeholder="Search by name..." className="mt-1.5 rounded-xl" />
               {memberResults.length > 0 && (
                 <div className="mt-1 max-h-44 overflow-y-auto rounded-xl border border-gray-100 dark:border-gray-800">
                   {memberResults.map(p => (
@@ -493,7 +493,7 @@ export default function Chat() {
                   ))}
                 </div>
               )}
-              <p className="mt-1 text-xs text-gray-400">Hanapin sa pangalan at i-tap para idagdag. Hindi na kailangan ng email.</p>
+              <p className="mt-1 text-xs text-gray-400">Search by name and tap to add. No email needed.</p>
             </div>
             {groupError && (
               <p className="flex items-center gap-1.5 rounded-xl bg-red-50 dark:bg-red-900/20 px-3 py-2.5 text-xs text-red-500">

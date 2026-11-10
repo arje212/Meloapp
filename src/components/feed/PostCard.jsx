@@ -374,8 +374,8 @@ function SingleImage({ src }) {
   if (broken) {
     return (
       <div className="flex flex-col items-center justify-center gap-1 bg-muted text-muted-foreground py-10 text-center px-6">
-        <p className="text-sm font-medium">Hindi ma-display ang larawan</p>
-        <p className="text-xs">Maaaring HEIC o sirang file ito. Hilingin sa nag-post na i-upload ulit.</p>
+        <p className="text-sm font-medium">This image cannot be displayed</p>
+        <p className="text-xs">It may be a HEIC or damaged file. Ask the poster to upload it again.</p>
       </div>
     );
   }
@@ -401,6 +401,7 @@ function ReelMedia({ src, isReel }) {
   const [progress, setProgress] = useState(0);
   const [ready, setReady] = useState(false);      // first frame decoded
   const [failed, setFailed] = useState(false);
+  const startedRef = useRef(false); // true once playback has started (until then we show a thumbnail frame)
   // Follow the real video shape: landscape stays landscape, portrait stays portrait.
   const [ratio, setRatio] = useState(isReel ? 9 / 16 : 16 / 9);
 
@@ -423,8 +424,11 @@ function ReelMedia({ src, isReel }) {
   }, []);
 
   const onMeta = (e) => {
-    const { videoWidth: w, videoHeight: h } = e.currentTarget;
+    const v = e.currentTarget;
+    const { videoWidth: w, videoHeight: h } = v;
     if (w && h) setRatio(Math.min(16 / 9, Math.max(9 / 16, w / h))); // clamp extreme shapes
+    // Many videos fade in from black: show a frame a little way in as the thumbnail
+    if (!startedRef.current && v.duration > 3) v.currentTime = Math.min(1, v.duration / 3);
   };
 
   const toggle = (e) => {
@@ -487,14 +491,20 @@ function ReelMedia({ src, isReel }) {
         onCanPlay={() => setReady(true)}
         onError={() => setFailed(true)}
         onTimeUpdate={onTimeUpdate}
-        onPlay={() => setPlaying(true)}
+        onPlay={(e) => {
+          setPlaying(true);
+          if (!startedRef.current) {
+            startedRef.current = true;
+            if (e.currentTarget.currentTime <= 1.5) e.currentTarget.currentTime = 0; // play from the start
+          }
+        }}
         onPause={() => setPlaying(false)}
       />
 
       {failed && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/80 text-white text-sm">
-          <p>Hindi ma-play ang video.</p>
-          <button onClick={retry} className="px-4 py-1.5 rounded-full bg-white/20 hover:bg-white/30 font-semibold">Subukan ulit</button>
+          <p>This video cannot be played.</p>
+          <button onClick={retry} className="px-4 py-1.5 rounded-full bg-white/20 hover:bg-white/30 font-semibold">Try again</button>
         </div>
       )}
 
@@ -715,7 +725,7 @@ export default function PostCard({ post, onComment }) {
       setLikesCount(c => Math.max(0, c - delta));
       // show the database's own reason so the real cause is visible (e.g. a missing policy or column)
       const reason = err?.message ? ` (${String(err.message).slice(0, 140)})` : '';
-      setLikeError(`Hindi na-save ang like. Subukan ulit.${reason}`);
+      setLikeError(`Could not save your like. Please try again.${reason}`);
       setTimeout(() => setLikeError(''), 9000);
     } finally {
       setLikeLoading(false);

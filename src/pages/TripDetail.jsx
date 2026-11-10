@@ -170,7 +170,7 @@ export default function TripDetail() {
       queryClient.invalidateQueries({ queryKey: ['posts'] });
     } catch (err) {
       console.error('Trip visibility update failed:', err);
-      setVisibilityError('Hindi ma-update ang visibility. Subukan ulit.');
+      setVisibilityError('Could not update visibility. Please try again.');
     } finally {
       setVisibilityBusy(false);
     }
@@ -552,8 +552,8 @@ export default function TripDetail() {
             <h3 className="font-semibold">{isPublicTrip ? 'Public trip' : 'Private trip'}</h3>
             <p className="text-xs text-muted-foreground">
               {isPublicTrip
-                ? 'Makikita ng lahat sa Trips at Feed, at puwede silang sumali.'
-                : 'Ikaw at ang mga inimbitahan mo lang ang makakakita.'}
+                ? 'Everyone can see it in Trips and the Feed, and can join.'
+                : 'Only you and the people you invite can see it.'}
             </p>
             {visibilityError && <p className="mt-1 text-xs text-destructive">{visibilityError}</p>}
           </div>

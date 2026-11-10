@@ -28,15 +28,15 @@ const truncate = (s: string, n = 140) => (s.length > n ? `${s.slice(0, n - 1)}�
 
 /** Chat content is plain text or JSON ({__type:'media'|'voice'|'text'}). Turn it into a short preview. */
 export function previewMessage(raw: string | null): string {
-  if (!raw) return 'Nagpadala ng message';
+  if (!raw) return 'Sent a message';
   try {
     const p = JSON.parse(raw);
     if (p?.__type === 'voice') return '🎤 Voice message';
     if (p?.__type === 'media') {
       if (p.text) return truncate(String(p.text));
-      return p.mediaType === 'video' ? '📹 Nagpadala ng video' : '📷 Nagpadala ng photo';
+      return p.mediaType === 'video' ? '📹 Sent a video' : '📷 Sent a photo';
     }
-    if (p?.__type === 'text') return truncate(String(p.text ?? 'Nagpadala ng message'));
+    if (p?.__type === 'text') return truncate(String(p.text ?? 'Sent a message'));
   } catch { /* plain text */ }
   return truncate(String(raw));
 }
@@ -96,7 +96,7 @@ export async function buildPush(db: any, table: string, rec: any): Promise<Push 
     const preview = previewMessage(rec.content);
     return {
       emails,
-      title: isGroup ? (room.name || 'Group chat') : (rec.sender_name || 'Bagong message'),
+      title: isGroup ? (room.name || 'Group chat') : (rec.sender_name || 'New message'),
       body: isGroup ? `${rec.sender_name || 'Someone'}: ${preview}` : preview,
       url: `/chat/${rec.room_id}`,
       type: 'chat',

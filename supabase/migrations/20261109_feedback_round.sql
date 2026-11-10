@@ -81,3 +81,8 @@ begin
       execute function private.notify_booking_email();
   end if;
 end $$;
+
+-- 6) Choice of what customers see for GCash: 'qr' (QR code only) or 'number'
+alter table public.agencies add column if not exists gcash_display text check (gcash_display in ('qr', 'number'));
+alter table public.trips    add column if not exists gcash_qr_url  text;
+alter table public.trips    add column if not exists gcash_display text check (gcash_display in ('qr', 'number'));

@@ -8,7 +8,7 @@ async function cropToBlob(src, area, maxSize = 800) {
   const img = await new Promise((resolve, reject) => {
     const el = new Image();
     el.onload = () => resolve(el);
-    el.onerror = () => reject(new Error('Hindi ma-load ang larawan.'));
+    el.onerror = () => reject(new Error('Could not load the image.'));
     el.src = src;
   });
   const side = Math.min(Math.round(Math.min(area.width, area.height)), maxSize) || 1;
@@ -17,14 +17,14 @@ async function cropToBlob(src, area, maxSize = 800) {
   canvas.height = side;
   canvas.getContext('2d').drawImage(img, area.x, area.y, area.width, area.height, 0, 0, side, side);
   return new Promise((resolve, reject) =>
-    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Hindi ma-crop ang larawan.'))), 'image/jpeg', 0.9));
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Could not crop the image.'))), 'image/jpeg', 0.9));
 }
 
 /**
  * Full-screen crop/zoom picker (round preview). Used when changing a profile photo.
  * onDone receives a JPEG Blob (max 800px), so big phone photos are also shrunk.
  */
-export default function ImageCropDialog({ src, onCancel, onDone, title = 'I-crop ang larawan' }) {
+export default function ImageCropDialog({ src, onCancel, onDone, title = 'Crop photo' }) {
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [area, setArea] = useState(null);
@@ -39,7 +39,7 @@ export default function ImageCropDialog({ src, onCancel, onDone, title = 'I-crop
     try {
       await onDone(await cropToBlob(src, area));
     } catch (err) {
-      setError(err.message || 'Hindi ma-save. Subukan ulit.');
+      setError(err.message || 'Could not save. Please try again.');
       setBusy(false);
     }
   };

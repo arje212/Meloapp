@@ -1,9 +1,9 @@
 import { useRef, useState } from 'react';
 
 export const PHOTO_LAYOUTS = [
-  { key: 'carousel', label: 'Carousel', hint: 'I-swipe ang mga photo' },
-  { key: 'collage',  label: 'Collage',  hint: 'Parang Instagram' },
-  { key: 'grid',     label: 'Grid',     hint: 'Isang malaki + maliliit' },
+  { key: 'carousel', label: 'Carousel', hint: 'Swipe through photos' },
+  { key: 'collage',  label: 'Collage',  hint: 'Instagram style' },
+  { key: 'grid',     label: 'Grid',     hint: 'One large + small' },
 ];
 
 const frame = 'absolute overflow-hidden border-2 border-white shadow-lg bg-muted';

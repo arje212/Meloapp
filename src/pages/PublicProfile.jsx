@@ -325,7 +325,7 @@ function ConnectedTrailMap({ destinations, conqueredMountains }) {
       </div>
       {noGps.length > 0 && (
         <div className="px-4 py-2 bg-muted/30 border-t border-border text-xs text-muted-foreground">
-          ⚠️ Walang GPS data: {noGps.map(m => m.name).join(', ')}
+          ⚠️ No GPS data: {noGps.map(m => m.name).join(', ')}
         </div>
       )}
       {activeMt?.gps && (
@@ -1089,7 +1089,7 @@ export default function PublicProfile() {
               ))}
               {!profileAchievements.length && (
                 <div className="col-span-full rounded-2xl border border-dashed border-slate-300 p-5 text-center text-sm text-muted-foreground">
-                  Walang public achievements na naka-display sa profile na ito pa.
+                  No public achievements are displayed on this profile yet.
                 </div>
               )}
             </div>

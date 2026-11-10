@@ -64,7 +64,7 @@ export default function Search() {
         const items = await runSearch(tab, q, user?.id);
         if (!cancelled) setState({ loading: false, error: '', items });
       } catch (err) {
-        if (!cancelled) setState({ loading: false, error: 'Hindi makapag-search ngayon. Subukan ulit.', items: [] });
+        if (!cancelled) setState({ loading: false, error: 'Search is unavailable right now. Please try again.', items: [] });
         console.warn('[search] failed:', err?.message);
       }
     }, 250);
@@ -88,7 +88,7 @@ export default function Search() {
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Hanapin ang tao, agency, o bundok..."
+              placeholder="Search people, agencies or mountains..."
               className="w-full bg-muted rounded-full pl-9 pr-9 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/30"
             />
             {query && (
@@ -113,13 +113,13 @@ export default function Search() {
 
       <div className="pb-24">
         {q.length < 2 ? (
-          <p className="text-center text-sm text-muted-foreground py-16 px-6">Mag-type ng kahit 2 letra para mag-search.</p>
+          <p className="text-center text-sm text-muted-foreground py-16 px-6">Type at least 2 letters to search.</p>
         ) : state.loading ? (
           <ListSkeleton rows={5} />
         ) : state.error ? (
           <p className="text-center text-sm text-destructive py-12 px-6">{state.error}</p>
         ) : state.items.length === 0 ? (
-          <p className="text-center text-sm text-muted-foreground py-16 px-6">Walang nakita para sa "{q}".</p>
+          <p className="text-center text-sm text-muted-foreground py-16 px-6">No results for "{q}".</p>
         ) : (
           <div className="divide-y">
             {tab === 'people' && state.items.map((p) => (

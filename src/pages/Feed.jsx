@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import FeaturedAgencies from '@/components/agencies/FeaturedAgencies';
 import { useQuery, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
@@ -7,6 +7,9 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { PenSquare, Compass, Image, Film, Smile, RefreshCw, Search } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
+import { Capacitor } from '@capacitor/core';
+import { App as CapacitorApp } from '@capacitor/app';
+import { orderFeedPage } from '@/lib/feedOrder';
 import PostCard from '@/components/feed/PostCard';
 import CreatePostDialog from '@/components/feed/CreatePostDialog';
 import CommentsSheet from '@/components/feed/CommentsSheet';
@@ -45,16 +48,6 @@ const TABS = [
   { key: 'trip',       label: 'Trips' },
 ];
 
-// Fisher-Yates shuffle
-function shuffle(arr) {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
-
 async function fetchPostsPage({ pageParam = 0, tab = 'all' }) {
   let query = supabase
     .from('posts')
@@ -88,43 +81,37 @@ async function fetchPostsPage({ pageParam = 0, tab = 'all' }) {
     .filter(post => post.post_type === 'trip')
     .map(post => post.trip_data?.id)
     .filter(Boolean))];
-  let validTripIds = new Set();
-  if (tripIds.length) {
-    const { data: trips, error: tripsError } = await supabase
-      .from('trips')
-      .select('id, status, is_public, start_date, end_date')
-      .in('id', tripIds);
-    if (tripsError) throw tripsError;
-    validTripIds = new Set((trips || [])
-      .filter(trip =>
-        trip.status !== 'completed' &&
-        trip.status !== 'cancelled' &&
-        trip.is_public !== false &&
-        !isTripExpired(trip)
-      )
-      .map(trip => trip.id));
-  }
+  const authorEmails = [...new Set(posts.map(p => p.profiles?.email).filter(Boolean))];
+
+  // These two lookups do not depend on each other: run them at the same time (was one after the other)
+  const [tripsRes, agenciesRes] = await Promise.all([
+    tripIds.length
+      ? supabase.from('trips').select('id, status, is_public, start_date, end_date').in('id', tripIds)
+      : Promise.resolve({ data: [], error: null }),
+    authorEmails.length
+      ? supabase.from('agencies').select('owner_email, name, logo_url, is_verified').in('owner_email', authorEmails).eq('status', 'approved')
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  if (tripsRes.error) throw tripsRes.error;
+
+  const validTripIds = new Set((tripsRes.data || [])
+    .filter(trip =>
+      trip.status !== 'completed' &&
+      trip.status !== 'cancelled' &&
+      trip.is_public !== false &&
+      !isTripExpired(trip)
+    )
+    .map(trip => trip.id));
 
   const visiblePosts = posts.filter(post =>
     post.post_type !== 'trip' || validTripIds.has(post.trip_data?.id)
   );
   if (!visiblePosts.length) return { posts: [], nextPage: posts.length === PAGE_SIZE ? pageParam + 1 : null };
 
-  // Enrich with agency data
-  const authorEmails = [...new Set(visiblePosts.map(p => p.profiles?.email).filter(Boolean))];
-  const { data: agencies } = await supabase
-    .from('agencies')
-    .select('owner_email, name, logo_url, is_verified')
-    .in('owner_email', authorEmails)
-    .eq('status', 'approved');
-
   const agencyMap = {};
-  agencies?.forEach(a => { agencyMap[a.owner_email] = a; });
+  (agenciesRes.data || []).forEach(a => { agencyMap[a.owner_email] = a; });
 
-  const enriched = visiblePosts.map(p => ({ ...p, agency: agencyMap[p.profiles?.email] || null }));
-
-  // Only shuffle the first page to keep pagination consistent
-  const result = pageParam === 0 ? shuffle(enriched) : enriched;
+  const result = visiblePosts.map(p => ({ ...p, agency: agencyMap[p.profiles?.email] || null }));
 
   return {
     posts: result,
@@ -250,12 +237,12 @@ function StoryViewer({ authorId, authorName, avatarUrl, onClose }) {
           </div>
         ) : !posts.length ? (
           <div className="w-full h-full flex flex-col items-center justify-center text-white/60 gap-2">
-            <p className="text-sm">Walang story sa last 24 hours</p>
+            <p className="text-sm">No stories in the last 24 hours</p>
           </div>
         ) : mediaUrl && isVideo ? (
           <video key={mediaUrl} src={mediaUrl} className="w-full h-full object-contain bg-black" autoPlay muted loop playsInline />
         ) : mediaUrl && imgBroken ? (
-          <div className="w-full h-full flex items-center justify-center text-white/70 text-sm px-8 text-center">Hindi ma-display ang larawan</div>
+          <div className="w-full h-full flex items-center justify-center text-white/70 text-sm px-8 text-center">This image cannot be displayed</div>
         ) : mediaUrl ? (
           <img src={mediaUrl} alt="" className="w-full h-full object-cover" onError={() => setImgBroken(true)} />
         ) : (
@@ -460,6 +447,7 @@ export default function Feed() {
   const [commentPost, setCommentPost] = useState(null);
   const [activeTab, setActiveTab] = useState('all');
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [feedSeed, setFeedSeed] = useState(() => Math.random()); // new mix on every app open / refresh
   const loaderRef = useRef(null);
   const queryClient = useQueryClient();
 
@@ -484,7 +472,12 @@ export default function Feed() {
 
   useEffect(() => { writeFeedCache(activeTab, data); }, [activeTab, data]);
 
-  const posts = data?.pages.flatMap(p => p.posts) ?? [];
+  // First page: shuffled with this session's seed (newer posts favoured). Later pages stay in order.
+  const posts = useMemo(() => {
+    const pages = data?.pages ?? [];
+    if (!pages.length) return [];
+    return [...orderFeedPage(pages[0].posts, feedSeed), ...pages.slice(1).flatMap(p => p.posts)];
+  }, [data, feedSeed]);
 
   // Infinite scroll observer
   useEffect(() => {
@@ -502,9 +495,43 @@ export default function Feed() {
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
-    await refetch();
-    setIsRefreshing(false);
-  }, [refetch]);
+    setFeedSeed(Math.random());
+    // Refreshing re-downloaded every page you had scrolled through, one after another (slow).
+    // Keep just the first page and fetch that.
+    queryClient.setQueryData(['posts', activeTab], (old) =>
+      old?.pages?.length > 1 ? { pages: old.pages.slice(0, 1), pageParams: old.pageParams.slice(0, 1) } : old);
+    try { await refetch(); } finally { setIsRefreshing(false); }
+  }, [refetch, queryClient, activeTab]);
+  const refreshRef = useRef(handleRefresh);
+  useEffect(() => { refreshRef.current = handleRefresh; }, [handleRefresh]);
+
+  // Coming back to the app after a while (recent apps, other app, locked screen): jump to the top and refresh
+  useEffect(() => {
+    const AWAY_MS = 20_000;
+    let hiddenAt = null;
+    const goHidden = () => { if (hiddenAt === null) hiddenAt = Date.now(); };
+    const goActive = () => {
+      const away = hiddenAt === null ? 0 : Date.now() - hiddenAt;
+      hiddenAt = null;
+      if (away < AWAY_MS) return;
+      window.scrollTo({ top: 0 });
+      document.querySelector('main')?.scrollTo?.({ top: 0 });
+      refreshRef.current();
+      queryClient.invalidateQueries({ queryKey: ['stories-bar'] });
+    };
+    const onVisibility = () => (document.visibilityState === 'hidden' ? goHidden() : goActive());
+    document.addEventListener('visibilitychange', onVisibility);
+    let nativeHandle;
+    if (Capacitor.isNativePlatform()) {
+      CapacitorApp.addListener('appStateChange', ({ isActive }) => (isActive ? goActive() : goHidden()))
+        .then(h => { nativeHandle = h; })
+        .catch(() => {});
+    }
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      nativeHandle?.remove();
+    };
+  }, [queryClient]);
 
   const { pulling, pullY } = usePullToRefresh(handleRefresh);
 
@@ -629,7 +656,7 @@ export default function Feed() {
           <p className="text-sm text-muted-foreground mb-4">
             {activeTab === 'all'
               ? 'Be the first to share your trip!'
-              : `Walang ${TABS.find(t => t.key === activeTab)?.label} posts pa.`}
+              : `No ${TABS.find(t => t.key === activeTab)?.label} posts yet.`}
           </p>
           <Button onClick={() => openCreate('photo')} className="rounded-full">
             <PenSquare className="w-4 h-4 mr-2" /> Share now

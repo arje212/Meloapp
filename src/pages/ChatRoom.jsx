@@ -289,7 +289,7 @@ function VoiceRecorderButton({ onSendVoice, disabled }) {
     setMicError('');
     try {
       if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-        setMicError('Hindi supported ng device na ito ang voice message.');
+        setMicError('Voice messages are not supported on this device.');
         return;
       }
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -308,7 +308,7 @@ function VoiceRecorderButton({ onSendVoice, disabled }) {
         streamRef.current = null;
         setDuration(0);
         durationRef.current = 0;
-        if (seconds < 1 || blob.size === 0) { setMicError('Masyadong maikli. Pindutin at hawakan nang mas matagal.'); return; }
+        if (seconds < 1 || blob.size === 0) { setMicError('Too short. Press and hold longer.'); return; }
         onSendVoice(blob, seconds);
       };
       mr.start();
@@ -322,8 +322,8 @@ function VoiceRecorderButton({ onSendVoice, disabled }) {
       console.warn('Microphone error:', err);
       setMicError(
         err?.name === 'NotAllowedError' || err?.name === 'SecurityError'
-          ? 'Hindi pinayagan ang mic. I-allow ang Microphone sa Settings → Apps → Melotrip → Permissions.'
-          : 'Hindi ma-start ang mic. Subukan ulit.'
+          ? 'Microphone access was denied. Allow Microphone in Settings → Apps → Melotrip → Permissions.'
+          : 'Could not start the microphone. Please try again.'
       );
     }
   };
@@ -1010,7 +1010,7 @@ export default function ChatRoom() {
       qc.invalidateQueries({ queryKey: ['messages', roomId] });
     } catch (err) {
       console.error('Voice send failed:', err);
-      alert('Hindi na-send ang voice message. Subukan ulit.');
+      alert('Could not send the voice message. Please try again.');
     }
     finally { setIsSending(false); }
   };

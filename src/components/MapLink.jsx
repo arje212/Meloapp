@@ -10,7 +10,7 @@ export function mapsUrl({ name, latitude, longitude }) {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
 }
 
-export default function MapLink({ name, latitude, longitude, label = 'Tingnan sa Google Maps', className = '' }) {
+export default function MapLink({ name, latitude, longitude, label = 'View on Google Maps', className = '' }) {
   if (!name && (latitude == null || longitude == null)) return null;
   return (
     <a

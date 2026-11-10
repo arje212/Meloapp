@@ -67,7 +67,7 @@ export default function SharePackageDialog({ pkg, agency, user, onClose }) {
       setSelected(prev => [...new Set([...prev, ...urls])].slice(0, 20));
     } catch (uploadError) {
       console.error('Photo upload failed:', uploadError);
-      setError('Hindi na-upload ang ilang photo. Pakisubukan ulit.');
+      setError('Some photos could not be uploaded. Please try again.');
     } finally { setUploading(false); }
   };
 
@@ -116,7 +116,7 @@ export default function SharePackageDialog({ pkg, agency, user, onClose }) {
       setDone(true);
     } catch (postError) {
       console.error('Share package post failed:', postError);
-      setError('Hindi na-share ang package. Pakisubukan ulit.');
+      setError('Could not share the package. Please try again.');
     } finally {
       setPosting(false);
     }
@@ -134,7 +134,7 @@ export default function SharePackageDialog({ pkg, agency, user, onClose }) {
         {done ? (
           <div className="px-5 pb-5 pt-2 text-center space-y-3">
             <CheckCircle2 className="w-12 h-12 text-primary mx-auto" />
-            <div><p className="font-semibold">Na-share na sa Feed!</p><p className="text-sm text-muted-foreground">Makikita na ng users ang package details at booking information.</p></div>
+            <div><p className="font-semibold">Shared to the Feed!</p><p className="text-sm text-muted-foreground">Users can now see the package details and booking information.</p></div>
             <Button className="w-full rounded-full" onClick={onClose}>Done</Button>
           </div>
         ) : (
@@ -148,7 +148,7 @@ export default function SharePackageDialog({ pkg, agency, user, onClose }) {
                   </div>
                 </PackagePhotoLayout>
               ) : (
-                <div className="flex aspect-[16/9] flex-col items-center justify-center gap-2 bg-muted text-muted-foreground"><Mountain className="h-8 w-8" /><span className="text-xs">Mag-add ng photos para sa post</span></div>
+                <div className="flex aspect-[16/9] flex-col items-center justify-center gap-2 bg-muted text-muted-foreground"><Mountain className="h-8 w-8" /><span className="text-xs">Add photos for the post</span></div>
               )}
               <div className="space-y-3 p-4">
                                 <div className="grid grid-cols-2 gap-2">
@@ -174,7 +174,7 @@ export default function SharePackageDialog({ pkg, agency, user, onClose }) {
             </div>
 
             <div className="space-y-2">
-              <p className="text-sm font-medium">Layout ng photos</p>
+              <p className="text-sm font-medium">Photo layout</p>
               <div className="grid grid-cols-3 gap-2">
                 {PHOTO_LAYOUTS.map(opt => (
                   <button key={opt.key} type="button" onClick={() => setLayout(opt.key)}
@@ -188,9 +188,9 @@ export default function SharePackageDialog({ pkg, agency, user, onClose }) {
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <p className="text-sm font-medium">Photos <span className="text-xs font-normal text-muted-foreground">{selected.length}/20 napili</span></p>
+                <p className="text-sm font-medium">Photos <span className="text-xs font-normal text-muted-foreground">{selected.length}/20 selected</span></p>
                 <Button type="button" variant="outline" size="sm" className="rounded-full" disabled={uploading || selected.length >= 20} onClick={() => fileRef.current?.click()}>
-                  <ImagePlus className="mr-1.5 h-4 w-4" />{uploading ? 'Ina-upload...' : 'Mag-add'}
+                  <ImagePlus className="mr-1.5 h-4 w-4" />{uploading ? 'Uploading...' : 'Add photos'}
                 </Button>
                 <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={handleUpload} />
               </div>
@@ -201,26 +201,26 @@ export default function SharePackageDialog({ pkg, agency, user, onClose }) {
                     const on = order >= 0;
                     return (
                       <div key={url} className="relative aspect-square">
-                        <button type="button" onClick={() => toggleImage(url)} aria-label={on ? 'Alisin ang photo' : 'Piliin ang photo'}
+                        <button type="button" onClick={() => toggleImage(url)} aria-label={on ? 'Remove photo' : 'Select photo'}
                           className={`h-full w-full overflow-hidden rounded-lg border-2 ${on ? 'border-primary' : 'border-transparent opacity-60'}`}>
                           <img src={url} alt="" className="h-full w-full object-cover" loading="lazy" />
                         </button>
                         {on && <span className="pointer-events-none absolute left-1 top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">{order === 0 ? <Check className="h-3 w-3" /> : order + 1}</span>}
                         {on && order !== 0 && (
-                          <button type="button" onClick={() => makeCover(url)} aria-label="Gawing cover" className="absolute bottom-1 right-1 rounded-full bg-black/65 p-1 text-white"><Star className="h-3 w-3" /></button>
+                          <button type="button" onClick={() => makeCover(url)} aria-label="Make cover" className="absolute bottom-1 right-1 rounded-full bg-black/65 p-1 text-white"><Star className="h-3 w-3" /></button>
                         )}
                       </div>
                     );
                   })}
                 </div>
-              ) : <p className="text-xs text-muted-foreground">Wala pang photos. Pindutin ang Mag-add para pumili mula sa phone.</p>}
-              <p className="text-[11px] text-muted-foreground">Pindutin ang photo para piliin/alisin. Ang may check ang cover; pindutin ang ⭐ para gawing cover ang ibang photo.</p>
+              ) : <p className="text-xs text-muted-foreground">No photos yet. Tap Add photos to choose from your phone.</p>}
+              <p className="text-[11px] text-muted-foreground">Tap a photo to select or remove it. The photo with the check mark is the cover; tap ⭐ to make another photo the cover.</p>
             </div>
 
             <div>
               <label htmlFor="package-share-caption" className="mb-1 block text-sm font-medium">Caption</label>
-              <Textarea id="package-share-caption" value={caption} onChange={event => setCaption(event.target.value)} rows={3} className="resize-none text-sm" placeholder="Ipakilala ang tour package sa users..." />
-              <p className="mt-1 text-[11px] text-muted-foreground">Lalabas din sa post ang package photos, inclusions, itinerary, presyo at pickup details.</p>
+              <Textarea id="package-share-caption" value={caption} onChange={event => setCaption(event.target.value)} rows={3} className="resize-none text-sm" placeholder="Introduce your tour package to users..." />
+              <p className="mt-1 text-[11px] text-muted-foreground">The post also shows the package photos, inclusions, itinerary, price and pickup details.</p>
             </div>
             {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
             <div className="flex gap-2">

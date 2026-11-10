@@ -110,7 +110,7 @@ function NativeBackHandler() {
       }
 
       lastBackAtRef.current = now;
-      toast({ title: 'Pindutin ulit ang back para lumabas.' });
+      toast({ title: 'Press back again to exit.' });
     }).then(listener => {
       if (active) backButtonListener = listener;
       else listener.remove();

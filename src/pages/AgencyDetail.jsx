@@ -1,5 +1,6 @@
 import { formatDay, toLocalDate } from '@/lib/tripDates';
 import MapLink from '@/components/MapLink';
+import GcashPayCard from '@/components/payments/GcashPayCard';
 import { useEffect, useState } from 'react';
 import { fetchMyChatRooms } from '@/lib/chatHelpers';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -48,13 +49,13 @@ const REPORT_REASONS = [
 ];
 
 const BOOKING_STATUS_CONFIG = {
-  pending:              { label: 'Pending Review',   color: 'bg-yellow-100 text-yellow-800 border-yellow-200',   icon: Clock,        desc: 'Hinihintay ang confirmation ng agency.' },
-  confirmed:            { label: 'Confirmed!',        color: 'bg-blue-100 text-blue-800 border-blue-200',         icon: CheckCircle,  desc: 'Na-confirm na ng agency ang iyong booking.' },
-  paid:                 { label: 'Payment Received', color: 'bg-green-100 text-green-800 border-green-200',      icon: CreditCard,   desc: 'Natanggap na ang iyong bayad.' },
-  completed:            { label: 'Trip Completed',   color: 'bg-primary/10 text-primary border-primary/20',      icon: CheckCircle2, desc: 'Tapos na ang trip. Salamat!' },
-  commission_sent:      { label: 'Processing',       color: 'bg-orange-100 text-orange-800 border-orange-200',   icon: TrendingUp,   desc: 'Processing ang iyong booking.' },
-  commission_confirmed: { label: 'All Done!',        color: 'bg-emerald-100 text-emerald-800 border-emerald-200',icon: CheckCircle2, desc: 'Lahat ay confirmed!' },
-  cancelled:            { label: 'Cancelled',        color: 'bg-red-100 text-red-800 border-red-200',            icon: X,            desc: 'Na-cancel ang booking.' },
+  pending:              { label: 'Pending Review',   color: 'bg-yellow-100 text-yellow-800 border-yellow-200',   icon: Clock,        desc: 'Waiting for the agency to confirm.' },
+  confirmed:            { label: 'Confirmed!',        color: 'bg-blue-100 text-blue-800 border-blue-200',         icon: CheckCircle,  desc: 'The agency has confirmed your booking.' },
+  paid:                 { label: 'Payment Received', color: 'bg-green-100 text-green-800 border-green-200',      icon: CreditCard,   desc: 'Your payment has been received.' },
+  completed:            { label: 'Trip Completed',   color: 'bg-primary/10 text-primary border-primary/20',      icon: CheckCircle2, desc: 'The trip is complete. Thank you!' },
+  commission_sent:      { label: 'Processing',       color: 'bg-orange-100 text-orange-800 border-orange-200',   icon: TrendingUp,   desc: 'Your booking is being processed.' },
+  commission_confirmed: { label: 'All Done!',        color: 'bg-emerald-100 text-emerald-800 border-emerald-200',icon: CheckCircle2, desc: 'Everything is confirmed!' },
+  cancelled:            { label: 'Cancelled',        color: 'bg-red-100 text-red-800 border-red-200',            icon: X,            desc: 'The booking was cancelled.' },
 };
 
 const DOWNPAYMENT_RATE = 0.3;
@@ -164,11 +165,11 @@ function JoinerSlotsTab({ agencyId, packages, user, isAgencyOwner, onBook }) {
   });
   if (isLoading) return <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>;
   if (!joinerSlots.length) return (
-    <div className="rounded-2xl border border-dashed border-border bg-muted/30 p-10 text-center"><UserPlus className="w-8 h-8 text-muted-foreground mx-auto mb-2" /><p className="text-sm font-medium text-muted-foreground">Walang available joiner slots</p><p className="text-xs text-muted-foreground mt-1">Mag-chat sa agency para tanungin ang availability</p></div>
+    <div className="rounded-2xl border border-dashed border-border bg-muted/30 p-10 text-center"><UserPlus className="w-8 h-8 text-muted-foreground mx-auto mb-2" /><p className="text-sm font-medium text-muted-foreground">No joiner slots available</p><p className="text-xs text-muted-foreground mt-1">Chat with the agency to ask about availability</p></div>
   );
   return (
     <div className="space-y-4">
-      <div className="flex items-start gap-2 rounded-xl bg-blue-50 border border-blue-200 p-3 text-xs text-blue-800"><Info className="w-3.5 h-3.5 shrink-0 mt-0.5" /><span>Joiner slots ay para sa mga solo o maliit na grupo na gustong sumama sa existing trip ng agency.</span></div>
+      <div className="flex items-start gap-2 rounded-xl bg-blue-50 border border-blue-200 p-3 text-xs text-blue-800"><Info className="w-3.5 h-3.5 shrink-0 mt-0.5" /><span>Joiner slots are for solo travelers or small groups who want to join an existing agency trip.</span></div>
       <div className="space-y-3">
         {joinerSlots.map(slot => {
           const joined = slotBookings.filter(b => b.slot_id === slot.id).length;
@@ -567,16 +568,16 @@ export default function AgencyDetail() {
   const handleBook = async () => {
     setFormError('');
     if (!bookForm.travel_date) { setFormError('Please select a travel date.'); return; }
-    if (isDateFull(bookForm.travel_date)) { setFormError('Puno na ang slots para sa date na ito. Pumili ng ibang date.'); return; }
+    if (isDateFull(bookForm.travel_date)) { setFormError('This date is fully booked. Please choose another date.'); return; }
     const slots = availableSlotsForDate(bookForm.travel_date);
-    if (slots !== null && bookForm.num_pax > slots) { setFormError(`${slots} slot${slots !== 1 ? 's' : ''} na lang ang natitira.`); return; }
+    if (slots !== null && bookForm.num_pax > slots) { setFormError(`${slots} slot${slots !== 1 ? 's' : ''} left.`); return; }
     if (bookingPkg?.max_pax && bookForm.num_pax > bookingPkg.max_pax) { setFormError(`Maximum ${bookingPkg.max_pax} participants allowed.`); return; }
 
     // Duplicate guard: same user + package + date with an active booking
     try {
       const mine = await base44.entities.Booking.filter({ package_id: bookingPkg.id, user_email: user.email });
       if (mine.some(b => b.travel_date === bookForm.travel_date && !['cancelled', 'refunded'].includes(b.status))) {
-        setFormError('May active booking ka na sa package at date na ito.');
+        setFormError('You already have an active booking for this package and date.');
         return;
       }
     } catch { /* if the check fails, don't block the booking */ }
@@ -1009,7 +1010,7 @@ export default function AgencyDetail() {
             <div className="space-y-4 py-2">
               <div className="text-center space-y-3">
                 <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto"><CheckCircle2 className="w-8 h-8 text-primary" /></div>
-                <div><p className="font-semibold text-lg">Booking Received!</p><p className="text-sm text-muted-foreground mt-1">Naipadala na ang iyong request sa <span className="font-medium text-foreground">{agency?.name}</span>. Mag-aabiso sila nang malapit.</p></div>
+                <div><p className="font-semibold text-lg">Booking Received!</p><p className="text-sm text-muted-foreground mt-1">Your request has been sent to <span className="font-medium text-foreground">{agency?.name}</span>. They will get back to you soon.</p></div>
                 <div className="bg-muted rounded-xl p-4 text-left space-y-1.5 text-sm">
                   <p><span className="text-muted-foreground">Package:</span> <span className="font-medium">{bookingPkg?.title}</span></p>
                   <p><span className="text-muted-foreground">Travel Date:</span> <span className="font-medium">{bookForm.travel_date}</span></p>
@@ -1028,8 +1029,8 @@ export default function AgencyDetail() {
 
               {/* Downpayment receipt upload */}
               <div className="rounded-xl border-2 border-dashed border-primary/30 bg-primary/5 p-4 space-y-3">
-                <p className="text-sm font-semibold text-primary flex items-center gap-2"><Receipt className="w-4 h-4" />I-upload ang Downpayment Receipt</p>
-                <p className="text-xs text-muted-foreground">Para ma-confirm ng agency ang iyong booking, i-send muna ang downpayment ({bookForm.payment_method}) tapos i-upload ang screenshot dito.</p>
+                <p className="text-sm font-semibold text-primary flex items-center gap-2"><Receipt className="w-4 h-4" />Upload Downpayment Receipt</p>
+                <p className="text-xs text-muted-foreground">To get your booking confirmed by the agency, send the downpayment ({bookForm.payment_method}) first, then upload the screenshot here.</p>
                 {dpReceiptDone ? (
                   <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 text-xs text-emerald-800"><CheckCircle className="w-4 h-4 shrink-0" /><span className="font-medium">Receipt submitted! Agency will confirm your booking shortly.</span></div>
                 ) : dpReceiptPreview ? (
@@ -1040,7 +1041,7 @@ export default function AgencyDetail() {
                 ) : (
                   <label className="flex items-center gap-3 p-3 border-2 border-dashed rounded-xl cursor-pointer hover:bg-muted transition-colors">
                     <Upload className="w-5 h-5 text-muted-foreground shrink-0" />
-                    <div><p className="text-xs text-muted-foreground">I-click para mag-upload ng screenshot</p><p className="text-[10px] text-muted-foreground">JPG, PNG — max 5MB</p></div>
+                    <div><p className="text-xs text-muted-foreground">Click to upload a screenshot</p><p className="text-[10px] text-muted-foreground">JPG, PNG — max 5MB</p></div>
                     <input type="file" accept="image/*" className="hidden" onChange={handleDpReceiptFileChange} />
                   </label>
                 )}
@@ -1051,7 +1052,7 @@ export default function AgencyDetail() {
                 )}
               </div>
 
-              {!isAgencyOwner && <div className="flex items-start gap-2 rounded-xl bg-blue-50 border border-blue-200 p-3 text-xs text-blue-800"><Info className="w-3.5 h-3.5 shrink-0 mt-0.5" /><span>I-monitor ang status ng booking mo sa iyong <strong>Profile → Bookings</strong> tab. Isang group chat ang awtomatikong nagawa para sa iyong booking.</span></div>}
+              {!isAgencyOwner && <div className="flex items-start gap-2 rounded-xl bg-blue-50 border border-blue-200 p-3 text-xs text-blue-800"><Info className="w-3.5 h-3.5 shrink-0 mt-0.5" /><span>Track your booking status in your <strong>Profile → Bookings</strong> tab. A group chat was created automatically for your booking.</span></div>}
               <div className="flex gap-2">
                 <Button variant="outline" className="flex-1 rounded-full" onClick={handleCloseBooking}>Close</Button>
                 <Button className="flex-1 rounded-full" onClick={() => { handleCloseBooking(); navigate('/profile'); }}>Track Booking</Button>
@@ -1089,7 +1090,7 @@ export default function AgencyDetail() {
                     {bookForm.travel_date && slotsLeft !== null && (
                       <div className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg ${selectedDateFull ? 'bg-red-50 text-red-700' : slotsLeft <= 2 ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
                         <span className={`w-1.5 h-1.5 rounded-full ${selectedDateFull ? 'bg-red-500' : slotsLeft <= 2 ? 'bg-amber-500' : 'bg-emerald-500'}`} />
-                        {selectedDateFull ? 'Puno na ang date na ito!' : `${slotsLeft} slot${slotsLeft !== 1 ? 's' : ''} na lang ang natitira`}
+                        {selectedDateFull ? 'This date is full!' : `${slotsLeft} slot${slotsLeft !== 1 ? 's' : ''} left`}
                       </div>
                     )}
                     {allowCustomDates && <button onClick={() => setBookForm(p => ({ ...p, date_mode: 'custom', travel_date: '' }))} className="text-xs text-primary hover:underline">Request a custom date instead →</button>}
@@ -1108,7 +1109,7 @@ export default function AgencyDetail() {
                           <div className="flex items-center justify-between text-xs">
                             <span className={`font-semibold flex items-center gap-1.5 ${full ? 'text-red-700' : slots <= 2 ? 'text-amber-700' : 'text-emerald-700'}`}>
                               <span className={`w-2 h-2 rounded-full ${full ? 'bg-red-500' : slots <= 2 ? 'bg-amber-500' : 'bg-emerald-500'}`} />
-                              {full ? 'Puno na ang date na ito!' : `${slots} slot${slots !== 1 ? 's' : ''} pa available`}
+                              {full ? 'This date is full!' : `${slots} slot${slots !== 1 ? 's' : ''} available`}
                             </span>
                             <span className={`text-[10px] ${full ? 'text-red-600' : 'text-muted-foreground'}`}>{booked}/{bookingPkg.max_pax} booked</span>
                           </div>
@@ -1173,27 +1174,14 @@ export default function AgencyDetail() {
 
               {/* Show GCash Account if GCash is selected and agency has GCash details */}
               {bookForm.payment_method === 'gcash' && (agency?.gcash_qr_url || agency?.gcash_number) && (
-                <div className="bg-gradient-to-br from-blue-500 to-blue-700 text-white rounded-xl p-4">
-                  <p className="text-xs font-medium opacity-80 mb-2">{agency?.gcash_qr_url ? 'I-scan gamit ang GCash app' : 'I-send ang payment sa'}</p>
-                  {agency?.gcash_qr_url ? (
-                    // QR only: the personal mobile number is not shown to customers
-                    <img src={agency.gcash_qr_url} alt="GCash QR code" className="mx-auto w-52 max-w-full rounded-xl bg-white p-2" />
-                  ) : (
-                    <p className="text-2xl font-bold tracking-widest">{agency.gcash_number}</p>
-                  )}
-                  <p className="text-sm opacity-90 mt-2 text-center">{agency.gcash_name}</p>
-                  <div className="mt-3 pt-3 border-t border-white/20">
-                    <p className="text-xs opacity-80">Downpayment Amount</p>
-                    <p className="text-xl font-bold">₱{downpayment.toLocaleString()}</p>
-                  </div>
-                </div>
+                <GcashPayCard mode={agency?.gcash_display} number={agency?.gcash_number} qrUrl={agency?.gcash_qr_url} name={agency?.gcash_name} amountLabel="Downpayment Amount" amount={downpayment} />
               )}
               {bookForm.payment_method === 'gcash' && !agency?.gcash_number && !agency?.gcash_qr_url && (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 flex items-start gap-2">
                   <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
                   <div className="text-sm text-amber-900">
-                    <p className="font-semibold">GCash details hindi available</p>
-                    <p className="text-xs mt-1">Chat ang agency para malaman kung saan mag-send ng payment.</p>
+                    <p className="font-semibold">GCash details are not available</p>
+                    <p className="text-xs mt-1">Chat with the agency to find out where to send your payment.</p>
                   </div>
                 </div>
               )}
@@ -1220,7 +1208,7 @@ export default function AgencyDetail() {
                       <div className="flex items-center justify-between"><div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-emerald-500" /><span className="text-xs text-muted-foreground">Downpayment now (30%)</span></div><span className="text-sm font-bold text-emerald-700">P{downpayment.toLocaleString()}</span></div>
                       <div className="flex items-center justify-between"><div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-amber-400" /><span className="text-xs text-muted-foreground">Balance on meetup day</span></div><span className="text-sm font-semibold text-amber-700">P{balance.toLocaleString()}</span></div>
                     </div>
-                    <div className="rounded-lg bg-blue-50 border border-blue-200 p-2 text-[11px] text-blue-800">Downpayment lang ang babayaran muna. Ang natitira (P{balance.toLocaleString()}) ay sa meetup na ibabayad.</div>
+                    <div className="rounded-lg bg-blue-50 border border-blue-200 p-2 text-[11px] text-blue-800">Only the downpayment is due now. The remaining balance (P{balance.toLocaleString()}) is paid at the meetup.</div>
                   </div>
                 )}
               </div>

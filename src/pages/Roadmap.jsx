@@ -277,7 +277,7 @@ function AddMountainModal({ open, onClose, onAdd }) {
             <Textarea
               rows={2}
               className="rounded-xl resize-none"
-              placeholder={alreadyDone ? 'Isalaysay ang iyong adventure...' : 'Plans, requirements...'}
+              placeholder={alreadyDone ? 'Tell the story of your adventure...' : 'Plans, requirements...'}
               value={input.notes}
               onChange={e => setInput(p => ({ ...p, notes: e.target.value }))}
             />
@@ -338,7 +338,7 @@ function MountainModal({ node, open, onClose, onMarkConquered, onRemove, isOwner
             <p className="text-sm text-foreground leading-relaxed">{node._story}</p>
           ) : (
             <p className="text-sm text-muted-foreground italic">
-              {isConquered ? 'Naabot mo na ito — isang malupit na achievement!' : node._status === 'current' ? 'Ito ang susunod mong target. Kaya mo yan!' : 'Isang araw maabot mo rin ito. ✨'}
+              {isConquered ? 'You reached this — an awesome achievement!' : node._status === 'current' ? 'This is your next target. You can do it!' : 'One day you will reach this too. ✨'}
             </p>
           )}
 
@@ -591,7 +591,7 @@ export default function Roadmap() {
     },
     onError: (err) => {
       console.error("Supabase Error 406/Quota Restriction:", err);
-      alert(`⚠️ Supabase Quota Restriction o Table Error: Hindi mai-save ang peak sa database dahil lumampas ang iyong project sa usage limits ng Supabase.`);
+      alert(`⚠️ Supabase quota restriction or table error: the peak could not be saved because your project exceeded the Supabase usage limits.`);
     }
   });
 
@@ -793,7 +793,7 @@ export default function Roadmap() {
           <div className="flex flex-col items-center py-10 text-muted-foreground">
             <Mountain className="w-12 h-12 mb-3 opacity-20" />
             <p className="text-sm font-medium mb-1">Wala pang bundok</p>
-            <p className="text-xs mb-4 text-center">I-add ang mga bundok na gusto mong akyatin!</p>
+            <p className="text-xs mb-4 text-center">Add the mountains you want to climb!</p>
             <button onClick={() => setAddOpen(true)} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground text-sm font-semibold rounded-full">
               <Plus className="w-4 h-4" /> Add First Peak
             </button>

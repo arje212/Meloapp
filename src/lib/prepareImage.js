@@ -15,6 +15,6 @@ export async function prepareImageFile(file) {
     return new File([blob], name, { type: 'image/jpeg' });
   } catch (err) {
     console.warn('[image] HEIC conversion failed:', err);
-    throw new Error('Hindi ma-convert ang HEIC na larawan. Subukang i-save ito bilang JPG.');
+    throw new Error('Could not convert the HEIC photo. Try saving it as a JPG.');
   }
 }

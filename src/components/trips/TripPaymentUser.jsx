@@ -70,7 +70,7 @@ export default function TripPaymentUser({ trip }) {
     enabled: !!trip?.id && !!user?.email && !!trip?.payment_required,
   });
 
-  if (!trip?.payment_required || !trip?.gcash_number) return null;
+  if (!trip?.payment_required || !(trip?.gcash_number || trip?.gcash_qr_url)) return null;
 
   const handleFileChange = (e) => {
     const f = e.target.files[0];

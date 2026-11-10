@@ -48,14 +48,14 @@ export default function Settings() {
   const [pwMsg, setPwMsg] = useState({ type: '', text: '' });
   const [pwBusy, setPwBusy] = useState(false);
   const changePassword = async () => {
-    if (pw.next.length < 8) return setPwMsg({ type: 'error', text: 'Kailangan ng kahit 8 characters.' });
-    if (pw.next !== pw.confirm) return setPwMsg({ type: 'error', text: 'Hindi magkapareho ang dalawang password.' });
+    if (pw.next.length < 8) return setPwMsg({ type: 'error', text: 'Use at least 8 characters.' });
+    if (pw.next !== pw.confirm) return setPwMsg({ type: 'error', text: 'The two passwords do not match.' });
     setPwBusy(true); setPwMsg({ type: '', text: '' });
     const { error } = await supabase.auth.updateUser({ password: pw.next });
     setPwBusy(false);
-    if (error) return setPwMsg({ type: 'error', text: error.message || 'Hindi ma-update ang password.' });
+    if (error) return setPwMsg({ type: 'error', text: error.message || 'Could not update the password.' });
     setPw({ next: '', confirm: '' });
-    setPwMsg({ type: 'ok', text: 'Na-update na ang password mo.' });
+    setPwMsg({ type: 'ok', text: 'Your password has been updated.' });
   };
 
   // deactivate / delete
@@ -68,7 +68,7 @@ export default function Settings() {
     const { error } = await supabase.from('profiles').update({ deactivated_at: new Date().toISOString() }).eq('id', user.id);
     if (error) {
       setBusy(false); setConfirm(null);
-      return setDangerMsg({ type: 'error', text: /deactivated_at|column/i.test(error.message || '') ? 'Hindi pa naka-setup ang deactivation sa database. Hilingin sa admin na i-run ang latest migration.' : 'Hindi ma-deactivate. Subukan ulit.' });
+      return setDangerMsg({ type: 'error', text: /deactivated_at|column/i.test(error.message || '') ? 'Deactivation is not set up in the database yet. Ask the admin to run the latest migration.' : 'Could not deactivate. Please try again.' });
     }
     await logout(); // signing in again reactivates the account
   };
@@ -78,9 +78,9 @@ export default function Settings() {
     const { error } = await supabase.from('account_deletion_requests').insert({ user_id: user.id, email: user.email });
     setBusy(false); setConfirm(null);
     if (error && error.code !== '23505') {
-      return setDangerMsg({ type: 'error', text: 'Hindi ma-send ang request. Subukan ulit mamaya.' });
+      return setDangerMsg({ type: 'error', text: 'Could not send the request. Please try again later.' });
     }
-    setDangerMsg({ type: 'ok', text: 'Natanggap na ang request mo. Buburahin ang account at data mo sa loob ng 30 araw.' });
+    setDangerMsg({ type: 'ok', text: 'Your request was received. Your account and data will be deleted within 30 days.' });
   };
 
   return (
@@ -94,61 +94,61 @@ export default function Settings() {
         <button onClick={() => navigate('/profile')} className="w-full flex items-center justify-between rounded-xl bg-muted/50 px-3 py-3 text-left">
           <span>
             <span className="block text-sm font-semibold">{user?.full_name || 'Your profile'}</span>
-            <span className="block text-xs text-muted-foreground">I-edit ang pangalan, photo, bio at location</span>
+            <span className="block text-xs text-muted-foreground">Edit your name, photo, bio and location</span>
           </span>
           <ChevronRight className="w-4 h-4 text-muted-foreground" />
         </button>
         <div>
-          <Label className="text-xs text-muted-foreground">Email (ikaw lang ang nakakakita)</Label>
+          <Label className="text-xs text-muted-foreground">Email (only you can see it)</Label>
           <p className="text-sm mt-0.5">{user?.email}</p>
         </div>
       </Section>
 
       <Section icon={Bell} title="Notifications">
-        {pushState === 'web' && <p className="text-sm text-muted-foreground">Ang push notifications ay para sa Android/iPhone app.</p>}
-        {pushState === 'checking' && <p className="text-sm text-muted-foreground">Chine-check...</p>}
-        {pushState === 'granted' && <p className="text-sm flex items-center gap-2 text-green-600"><Check className="w-4 h-4" />Naka-on ang notifications sa phone na ito.</p>}
-        {pushState === 'prompt' && <Button className="rounded-full" onClick={enablePush}>I-on ang notifications</Button>}
-        {pushState === 'denied' && <p className="text-sm text-muted-foreground">Naka-block ang notifications. I-on sa phone: Settings → Apps → Melotrip → Notifications.</p>}
-        <Button variant="outline" className="rounded-full" onClick={() => navigate('/notifications')}>Tingnan ang mga notification</Button>
+        {pushState === 'web' && <p className="text-sm text-muted-foreground">Push notifications are available in the Android and iPhone app.</p>}
+        {pushState === 'checking' && <p className="text-sm text-muted-foreground">Checking...</p>}
+        {pushState === 'granted' && <p className="text-sm flex items-center gap-2 text-green-600"><Check className="w-4 h-4" />Notifications are on for this phone.</p>}
+        {pushState === 'prompt' && <Button className="rounded-full" onClick={enablePush}>Turn on notifications</Button>}
+        {pushState === 'denied' && <p className="text-sm text-muted-foreground">Notifications are blocked. Turn them on in your phone: Settings → Apps → Melotrip → Notifications.</p>}
+        <Button variant="outline" className="rounded-full" onClick={() => navigate('/notifications')}>View notifications</Button>
       </Section>
 
       <Section icon={Lock} title="Password">
-        <div><Label>Bagong password</Label><Input className="mt-1" type="password" autoComplete="new-password" value={pw.next} onChange={e => setPw(p => ({ ...p, next: e.target.value }))} /></div>
-        <div><Label>Ulitin ang password</Label><Input className="mt-1" type="password" autoComplete="new-password" value={pw.confirm} onChange={e => setPw(p => ({ ...p, confirm: e.target.value }))} /></div>
+        <div><Label>New password</Label><Input className="mt-1" type="password" autoComplete="new-password" value={pw.next} onChange={e => setPw(p => ({ ...p, next: e.target.value }))} /></div>
+        <div><Label>Repeat password</Label><Input className="mt-1" type="password" autoComplete="new-password" value={pw.confirm} onChange={e => setPw(p => ({ ...p, confirm: e.target.value }))} /></div>
         {pwMsg.text && <p className={`text-xs ${pwMsg.type === 'ok' ? 'text-green-600' : 'text-destructive'}`}>{pwMsg.text}</p>}
-        <Button className="rounded-full" onClick={changePassword} disabled={pwBusy || !pw.next}>{pwBusy ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}I-update ang password</Button>
+        <Button className="rounded-full" onClick={changePassword} disabled={pwBusy || !pw.next}>{pwBusy ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}Update password</Button>
       </Section>
 
       <Section icon={ShieldCheck} title="Privacy">
-        <p className="text-sm text-muted-foreground">Hindi ipinapakita ang email mo sa ibang users. Pangalan at photo lang ang nakikita sa profile, chat at search.</p>
+        <p className="text-sm text-muted-foreground">Your email is not shown to other users. Only your name and photo appear on your profile, in chat and in search.</p>
       </Section>
 
       <Section icon={UserX} title="Account">
         {dangerMsg.text && <p className={`text-xs ${dangerMsg.type === 'ok' ? 'text-green-600' : 'text-destructive'}`}>{dangerMsg.text}</p>}
         <Button variant="outline" className="w-full rounded-full justify-start" onClick={() => setConfirm('deactivate')}>
-          <UserX className="w-4 h-4 mr-2" />I-deactivate ang account
+          <UserX className="w-4 h-4 mr-2" />Deactivate account
         </Button>
-        <p className="text-xs text-muted-foreground -mt-1">Itatago ka sa search. Mag-login ulit anumang oras para ma-reactivate.</p>
+        <p className="text-xs text-muted-foreground -mt-1">You will be hidden from search. Log in again any time to reactivate.</p>
         <Button variant="outline" className="w-full rounded-full justify-start text-destructive border-destructive/40 hover:text-destructive" onClick={() => setConfirm('delete')}>
-          <Trash2 className="w-4 h-4 mr-2" />Burahin ang account at data ko
+          <Trash2 className="w-4 h-4 mr-2" />Delete my account and data
         </Button>
       </Section>
 
       <AlertDialog open={!!confirm} onOpenChange={(o) => !o && !busy && setConfirm(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{confirm === 'delete' ? 'Burahin ang account?' : 'I-deactivate ang account?'}</AlertDialogTitle>
+            <AlertDialogTitle>{confirm === 'delete' ? 'Delete account?' : 'Deactivate account?'}</AlertDialogTitle>
             <AlertDialogDescription>
               {confirm === 'delete'
-                ? 'Magpapadala kami ng request para tuluyang burahin ang account at data mo (hanggang 30 araw). Hindi ito mababawi kapag nabura na.'
-                : 'Hindi ka na lalabas sa search at hindi ka na makakatanggap ng chat habang deactivated. Mare-reactivate ito kapag nag-login ka ulit.'}
+                ? 'This sends a request to permanently delete your account and data (within 30 days). It cannot be undone once deleted.'
+                : 'You will no longer appear in search and cannot receive chats while deactivated. Logging in again reactivates your account.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
             <AlertDialogAction disabled={busy} onClick={(e) => { e.preventDefault(); confirm === 'delete' ? requestDeletion() : deactivate(); }} className={confirm === 'delete' ? 'bg-destructive hover:bg-destructive/90' : ''}>
-              {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : confirm === 'delete' ? 'Oo, burahin' : 'I-deactivate'}
+              {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : confirm === 'delete' ? 'Yes, delete' : 'Deactivate'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

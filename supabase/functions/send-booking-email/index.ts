@@ -28,48 +28,48 @@ export function safeEqual(a: string, b: string): boolean {
 
 const STATUS: Record<string, { subject: string; headline: string; note: string }> = {
   pending: {
-    subject: 'Natanggap namin ang booking mo',
-    headline: 'Natanggap na ang booking mo!',
-    note: 'I-send ang downpayment at i-upload ang screenshot ng receipt sa app para ma-confirm ng agency ang booking mo.',
+    subject: 'We received your booking',
+    headline: 'Your booking was received!',
+    note: 'Send the downpayment and upload a screenshot of your receipt in the app so the agency can confirm your booking.',
   },
   confirmed: {
-    subject: 'Na-confirm ang booking mo',
-    headline: 'Confirmed na ang booking mo 🎉',
-    note: 'Handa ka na! Makikita mo ang group chat at detalye ng trip sa app.',
+    subject: 'Your booking is confirmed',
+    headline: 'Your booking is confirmed 🎉',
+    note: 'You are all set! You can see the group chat and trip details in the app.',
   },
   cancelled: {
-    subject: 'Na-cancel ang booking',
-    headline: 'Na-cancel ang booking',
-    note: 'Kung may tanong ka, i-chat ang agency sa app.',
+    subject: 'Your booking was cancelled',
+    headline: 'Booking cancelled',
+    note: 'If you have questions, chat with the agency in the app.',
   },
   rejected: {
-    subject: 'Hindi na-approve ang booking',
-    headline: 'Hindi na-approve ang booking',
-    note: 'Pwede kang pumili ng ibang petsa o i-chat ang agency para sa detalye.',
+    subject: 'Your booking was not approved',
+    headline: 'Booking not approved',
+    note: 'You can choose another date or chat with the agency for details.',
   },
   completed: {
-    subject: 'Tapos na ang trip mo',
-    headline: 'Salamat sa pagsama! 🏔️',
-    note: 'Mag-iwan ng review sa app para makatulong sa ibang hikers.',
+    subject: 'Your trip is complete',
+    headline: 'Thanks for joining! 🏔️',
+    note: 'Leave a review in the app to help other hikers.',
   },
 };
 
 export function buildEmail(rec: Record<string, unknown>) {
   const status = String(rec.status || 'pending').toLowerCase();
   const info = STATUS[status] ?? {
-    subject: 'May update sa booking mo',
-    headline: 'May update sa booking mo',
-    note: `Bagong status: ${status}.`,
+    subject: 'There is an update to your booking',
+    headline: 'There is an update to your booking',
+    note: `New status: ${status}.`,
   };
   const trackUrl = `${SITE_URL}/profile?tab=bookings`;
   const rows: [string, string][] = [
     ['Package', esc(rec.package_title)],
     ['Agency', esc(rec.agency_name)],
-    ['Petsa ng trip', esc(rec.travel_date || 'Flexible')],
+    ['Trip date', esc(rec.travel_date || 'Flexible')],
     ['Pax', esc(rec.num_pax)],
     ['Total', peso(rec.total_price)],
     ...(Number(rec.balance_amount) > 0
-      ? ([['Downpayment', peso(rec.downpayment_amount)], ['Balance sa meetup', peso(rec.balance_amount)]] as [string, string][])
+      ? ([['Downpayment', peso(rec.downpayment_amount)], ['Balance at meetup', peso(rec.balance_amount)]] as [string, string][])
       : []),
     ['Status', esc(status.toUpperCase())],
   ];
@@ -87,7 +87,7 @@ export function buildEmail(rec: Record<string, unknown>) {
     <p style="margin:16px 0 0;color:#9ca3af;font-size:12px;text-align:center">Booking ref: ${esc(String(rec.id ?? '').slice(0, 8))}</p>
   </div>
 </div></body></html>`;
-  const text = `${info.headline}\n\nPackage: ${rec.package_title}\nAgency: ${rec.agency_name}\nPetsa: ${rec.travel_date || 'Flexible'}\nPax: ${rec.num_pax}\nTotal: ${peso(rec.total_price)}\nStatus: ${status}\n\nTrack booking: ${trackUrl}`;
+  const text = `${info.headline}\n\nPackage: ${rec.package_title}\nAgency: ${rec.agency_name}\nDate: ${rec.travel_date || 'Flexible'}\nPax: ${rec.num_pax}\nTotal: ${peso(rec.total_price)}\nStatus: ${status}\n\nTrack booking: ${trackUrl}`;
   return { subject: `${info.subject}: ${rec.package_title ?? 'Melotrip'}`, html, text };
 }
 

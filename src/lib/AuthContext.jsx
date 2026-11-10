@@ -93,7 +93,7 @@ export const AuthProvider = ({ children }) => {
         const { error: reactivateError } = await supabase.from('profiles').update({ deactivated_at: null }).eq('id', authUser.id);
         if (!reactivateError) {
           merged = { ...merged, deactivated_at: null };
-          toast({ title: 'Welcome back!', description: 'Na-reactivate na ang account mo.' });
+          toast({ title: 'Welcome back!', description: 'Your account has been reactivated.' });
         }
       }
 

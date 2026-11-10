@@ -1,3 +1,4 @@
+import GcashModeFields from '@/components/payments/GcashModeFields';
 import { useState, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
@@ -251,7 +252,7 @@ export default function AgencyDashboard() {
   const [uploadingPromo, setUploadingPromo] = useState(false);
 
   const [editProfileDialog,   setEditProfileDialog]   = useState(false);
-  const [profileForm,         setProfileForm]         = useState({ logo_url: '', cover_url: '', gallery_photos: [], description: '', location: '', contact_phone: '', contact_email: '', gcash_qr_url: '', website: '', facebook_url: '', instagram_url: '', years_operating: '', gcash_number: '', gcash_name: '', business_reg_document_path: '', permit_document_path: '' });
+  const [profileForm,         setProfileForm]         = useState({ logo_url: '', cover_url: '', gallery_photos: [], description: '', location: '', contact_phone: '', contact_email: '', gcash_qr_url: '', gcash_display: '', website: '', facebook_url: '', instagram_url: '', years_operating: '', gcash_number: '', gcash_name: '', business_reg_document_path: '', permit_document_path: '' });
   const [uploadingProfileImg, setUploadingProfileImg] = useState(null);
   const [profileTab,          setProfileTab]          = useState('images');
 
@@ -416,10 +417,10 @@ export default function AgencyDashboard() {
     try {
       const bizEmail = String(profileForm.contact_email || '').trim();
       if (bizEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(bizEmail)) {
-        setSaveError('Ilagay ang tamang business email (hal. info@agency.com).'); setSaving(false); return;
+        setSaveError('Enter a valid business email (e.g. info@agency.com).'); setSaving(false); return;
       }
       const updates = {};
-      const fields = ['logo_url','cover_url','gallery_photos','description','location','contact_phone','website','facebook_url','instagram_url','years_operating','gcash_number','gcash_name','gcash_qr_url','contact_email','business_reg_document_path','permit_document_path'];
+      const fields = ['logo_url','cover_url','gallery_photos','description','location','contact_phone','website','facebook_url','instagram_url','years_operating','gcash_number','gcash_name','gcash_qr_url','gcash_display','contact_email','business_reg_document_path','permit_document_path'];
       // An emptied box now clears the saved value (before, it was skipped and the old text came back)
       const numeric = new Set(['years_operating']);
       fields.forEach(f => {
@@ -439,7 +440,7 @@ export default function AgencyDashboard() {
         // A new column is missing in the database: say so instead of pretending it was saved
         const errMsg = `${updateErr?.message || ''} ${updateErr?.details || ''}`;
         if (/column|does not exist/i.test(errMsg)) {
-          throw new Error('May field na hindi pa naka-setup sa database (contact email / GCash QR). Hilingin sa admin na i-run ang latest migration.');
+          throw new Error('A new field is not set up in the database yet (contact email / GCash options). Ask the admin to run the latest migration.');
         }
         throw updateErr;
       }
@@ -501,8 +502,8 @@ export default function AgencyDashboard() {
   };
 
   const handleMarkCompleted = async () => {
-    if (!completionForm.proof_url) { setSaveError('Kailangan ng proof photo bago i-complete ang trip.'); return; }
-    if (!completionForm.actual_pax || Number(completionForm.actual_pax) < 1) { setSaveError('Ilagay ang actual na bilang ng dumating na participants.'); return; }
+    if (!completionForm.proof_url) { setSaveError('A proof photo is required before completing the trip.'); return; }
+    if (!completionForm.actual_pax || Number(completionForm.actual_pax) < 1) { setSaveError('Enter the actual number of participants who came.'); return; }
     setSaving(true); setSaveError('');
     try {
       const actualPax = Number(completionForm.actual_pax);
@@ -523,8 +524,8 @@ export default function AgencyDashboard() {
 
   const handleReceiptFileChange = (e) => {
     const file = e.target.files[0]; if (!file) return;
-    if (!file.type.startsWith('image/')) { setSaveError('Pumili ng image file (JPG, PNG).'); return; }
-    if (file.size > 5 * 1024 * 1024) { setSaveError('Max 5MB lang ang file size.'); return; }
+    if (!file.type.startsWith('image/')) { setSaveError('Please choose an image file (JPG, PNG).'); return; }
+    if (file.size > 5 * 1024 * 1024) { setSaveError('Maximum file size is 5MB.'); return; }
     setReceiptFile(file);
     const reader = new FileReader();
     reader.onload = (ev) => setReceiptPreview(ev.target.result);
@@ -539,7 +540,7 @@ export default function AgencyDashboard() {
       await base44.entities.Booking.update(receiptBooking.id, { gcash_receipt_url: url, status: 'commission_sent', commission_sent_date: new Date().toISOString() });
       qc.invalidateQueries({ queryKey: ['agency-bookings'] });
       setReceiptDialog(false);
-    } catch (err) { setSaveError('Upload failed. Subukan ulit.'); }
+    } catch (err) { setSaveError('Upload failed. Please try again.'); }
     finally { setUploadingReceipt(false); }
   };
 
@@ -670,7 +671,7 @@ export default function AgencyDashboard() {
   };
 
   const openEditProfile = () => {
-    setProfileForm({ logo_url: agency.logo_url || '', cover_url: agency.cover_url || '', gallery_photos: agency.gallery_photos || [], description: agency.description || '', location: agency.location || '', contact_phone: agency.contact_phone || '', contact_email: agency.contact_email || '', gcash_qr_url: agency.gcash_qr_url || '', website: agency.website || '', facebook_url: agency.facebook_url || '', instagram_url: agency.instagram_url || '', years_operating: String(agency.years_operating || ''), gcash_number: agency.gcash_number || '', gcash_name: agency.gcash_name || '', business_reg_document_path: agency.business_reg_document_path || '', permit_document_path: agency.permit_document_path || '' });
+    setProfileForm({ logo_url: agency.logo_url || '', cover_url: agency.cover_url || '', gallery_photos: agency.gallery_photos || [], description: agency.description || '', location: agency.location || '', contact_phone: agency.contact_phone || '', contact_email: agency.contact_email || '', gcash_qr_url: agency.gcash_qr_url || '', gcash_display: agency.gcash_display || '', website: agency.website || '', facebook_url: agency.facebook_url || '', instagram_url: agency.instagram_url || '', years_operating: String(agency.years_operating || ''), gcash_number: agency.gcash_number || '', gcash_name: agency.gcash_name || '', business_reg_document_path: agency.business_reg_document_path || '', permit_document_path: agency.permit_document_path || '' });
     setProfileTab('images'); setSaveError(''); setEditProfileDialog(true);
   };
 
@@ -719,13 +720,13 @@ export default function AgencyDashboard() {
           {pendingReceiptCount > 0 && (
             <div className="mt-3 flex items-center gap-2 bg-orange-50 border border-orange-200 rounded-xl px-3 py-2">
               <Receipt className="w-4 h-4 text-orange-500 shrink-0" />
-              <p className="text-xs text-orange-800 flex-1"><span className="font-semibold">{pendingReceiptCount} booking{pendingReceiptCount > 1 ? 's' : ''}</span> completed — i-send na ang GCash commission receipt.</p>
+              <p className="text-xs text-orange-800 flex-1"><span className="font-semibold">{pendingReceiptCount} booking{pendingReceiptCount > 1 ? 's' : ''}</span> completed — send the GCash commission receipt.</p>
             </div>
           )}
           {pendingDpReceiptCount > 0 && (
             <div className="mt-2 flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-xl px-3 py-2">
               <Wallet className="w-4 h-4 text-blue-500 shrink-0" />
-              <p className="text-xs text-blue-800 flex-1"><span className="font-semibold">{pendingDpReceiptCount} booking{pendingDpReceiptCount > 1 ? 's' : ''}</span> may submitted na downpayment receipt — i-review at i-confirm.</p>
+              <p className="text-xs text-blue-800 flex-1"><span className="font-semibold">{pendingDpReceiptCount} booking{pendingDpReceiptCount > 1 ? 's' : ''}</span> with a submitted downpayment receipt — review and confirm.</p>
             </div>
           )}
         </div>
@@ -845,29 +846,34 @@ export default function AgencyDashboard() {
           />
 
           {/* GCash Account Setup */}
-          <div className={`rounded-2xl p-4 border ${agency?.gcash_number ? 'bg-blue-50 border-blue-200' : 'bg-amber-50 border-amber-200'}`}>
+          <div className={`rounded-2xl p-4 border ${(agency?.gcash_number || agency?.gcash_qr_url) ? 'bg-blue-50 border-blue-200' : 'bg-amber-50 border-amber-200'}`}>
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${agency?.gcash_number ? 'bg-blue-600 text-white' : 'bg-amber-600 text-white'}`}>₱</div>
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${(agency?.gcash_number || agency?.gcash_qr_url) ? 'bg-blue-600 text-white' : 'bg-amber-600 text-white'}`}>₱</div>
                 <div>
-                  <p className={`font-semibold text-sm ${agency?.gcash_number ? 'text-blue-900' : 'text-amber-900'}`}>GCash Account</p>
-                  <p className={`text-xs ${agency?.gcash_number ? 'text-blue-700' : 'text-amber-700'}`}>{agency?.gcash_number ? 'Customers will send downpayment here' : 'Setup your GCash account to receive payments'}</p>
+                  <p className={`font-semibold text-sm ${(agency?.gcash_number || agency?.gcash_qr_url) ? 'text-blue-900' : 'text-amber-900'}`}>GCash Account</p>
+                  <p className={`text-xs ${(agency?.gcash_number || agency?.gcash_qr_url) ? 'text-blue-700' : 'text-amber-700'}`}>{(agency?.gcash_number || agency?.gcash_qr_url) ? 'Customers will send downpayment here' : 'Setup your GCash account to receive payments'}</p>
                 </div>
               </div>
               <Button 
                 size="sm" 
                 variant="outline" 
-                className={`rounded-full h-7 text-xs ${agency?.gcash_number ? 'text-blue-600 border-blue-200' : 'text-amber-600 border-amber-200'}`}
+                className={`rounded-full h-7 text-xs ${(agency?.gcash_number || agency?.gcash_qr_url) ? 'text-blue-600 border-blue-200' : 'text-amber-600 border-amber-200'}`}
                 onClick={() => setEditProfileDialog(true)}
               >
-                {agency?.gcash_number ? 'Edit' : 'Setup'}
+                {(agency?.gcash_number || agency?.gcash_qr_url) ? 'Edit' : 'Setup'}
               </Button>
             </div>
-            {agency?.gcash_number && (
+            {(agency?.gcash_number || agency?.gcash_qr_url) && (
               <div className="rounded-lg bg-white/50 p-3 border border-blue-100">
                 <div className="text-sm space-y-1">
-                  <div><span className="text-xs text-blue-700">GCash Number:</span> <span className="font-bold text-blue-900">{agency.gcash_number}</span></div>
-                  <div><span className="text-xs text-blue-700">Account Name:</span> <span className="font-semibold text-blue-900">{agency.gcash_name}</span></div>
+                  <div>
+                    <span className="text-xs text-blue-700">Customers see:</span>{' '}
+                    <span className="font-bold text-blue-900">
+                      {(agency.gcash_display === 'qr' || (!agency.gcash_display && agency.gcash_qr_url && !agency.gcash_number)) ? 'QR code' : agency.gcash_number}
+                    </span>
+                  </div>
+                  {agency.gcash_name && <div><span className="text-xs text-blue-700">Account Name:</span> <span className="font-semibold text-blue-900">{agency.gcash_name}</span></div>}
                 </div>
               </div>
             )}
@@ -912,7 +918,7 @@ export default function AgencyDashboard() {
               {b.dp_receipt_url && (
                 <div className="mb-3 rounded-xl overflow-hidden border border-blue-200">
                   <div className="px-3 py-1.5 bg-blue-50 flex items-center gap-2 text-xs text-blue-800 font-medium">
-                    <Receipt className="w-3 h-3 shrink-0" /> Downpayment Receipt mula sa User
+                    <Receipt className="w-3 h-3 shrink-0" /> Downpayment receipt from the user
                   </div>
                   <img src={b.dp_receipt_url} alt="DP receipt" className="w-full h-28 object-cover object-top" />
                   <div className="px-3 py-1.5 bg-blue-50 text-[11px] text-blue-700">
@@ -948,12 +954,12 @@ export default function AgencyDashboard() {
                 <div className="space-y-2">
                   {b.use_downpayment && !b.dp_receipt_url && (
                     <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 text-xs text-amber-800">
-                      <Clock className="w-3 h-3 shrink-0" /> Hinihintay pa ang DP receipt ng user bago ma-confirm ang booking.
+                      <Clock className="w-3 h-3 shrink-0" /> Waiting for the user's downpayment receipt before the booking can be confirmed.
                     </div>
                   )}
                   {b.dp_receipt_url && (
                     <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-1.5 text-xs text-emerald-800">
-                      <CheckCircle className="w-3 h-3 shrink-0" /> May DP receipt na ang user — pwede na i-confirm ang booking.
+                      <CheckCircle className="w-3 h-3 shrink-0" /> The user submitted a downpayment receipt — you can confirm the booking.
                     </div>
                   )}
                   <div className="flex gap-2">
@@ -1089,7 +1095,7 @@ export default function AgencyDashboard() {
               <div><Label>Agency Description</Label><Textarea className="mt-1 resize-none" rows={3} value={profileForm.description} onChange={e => setProfileForm(p => ({ ...p, description: e.target.value }))} placeholder="Tell clients about your agency..." /></div>
               <div><Label>Location</Label><div className="relative mt-1"><MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" /><Input className="pl-9" value={profileForm.location} onChange={e => setProfileForm(p => ({ ...p, location: e.target.value }))} placeholder="e.g. Baguio City, Benguet" /></div></div>
               <div><Label>Contact Phone</Label><div className="relative mt-1"><Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" /><Input className="pl-9" value={profileForm.contact_phone} onChange={e => setProfileForm(p => ({ ...p, contact_phone: e.target.value }))} placeholder="+63 9XX XXX XXXX" /></div></div>
-              <div><Label>Business Email <span className="text-muted-foreground text-xs">(makikita ng customers)</span></Label><Input className="mt-1" type="email" inputMode="email" placeholder="info@youragency.com" value={profileForm.contact_email} onChange={e => setProfileForm(p => ({ ...p, contact_email: e.target.value }))} /></div>
+              <div><Label>Business Email <span className="text-muted-foreground text-xs">(visible to customers)</span></Label><Input className="mt-1" type="email" inputMode="email" placeholder="info@youragency.com" value={profileForm.contact_email} onChange={e => setProfileForm(p => ({ ...p, contact_email: e.target.value }))} /></div>
               <div><Label>Years in Business</Label><Input className="mt-1" type="number" min="0" value={profileForm.years_operating} onChange={e => setProfileForm(p => ({ ...p, years_operating: e.target.value }))} placeholder="e.g. 5" /></div>
               <div><Label>Website</Label><div className="relative mt-1"><Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" /><Input className="pl-9" value={profileForm.website} onChange={e => setProfileForm(p => ({ ...p, website: e.target.value }))} placeholder="https://yourwebsite.com" /></div></div>
               <div><Label>Facebook Page URL</Label><div className="relative mt-1"><Facebook className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" /><Input className="pl-9" value={profileForm.facebook_url} onChange={e => setProfileForm(p => ({ ...p, facebook_url: e.target.value }))} placeholder="https://facebook.com/yourpage" /></div></div>
@@ -1148,43 +1154,10 @@ export default function AgencyDashboard() {
                   <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-bold">₱</div>
                   <div>
                     <p className="text-sm font-semibold text-blue-900">GCash Account for Customers</p>
-                    <p className="text-[11px] text-blue-700">Customers will send downpayment sa account na ito</p>
+                    <p className="text-[11px] text-blue-700">Customers will send their downpayment to this account</p>
                   </div>
                 </div>
-                <div>
-                  <Label className="text-xs text-blue-900">GCash Number</Label>
-                  <Input 
-                    className="mt-1 bg-white"
-                    placeholder="09XX XXX XXXX"
-                    value={profileForm.gcash_number}
-                    onChange={e => setProfileForm(p => ({ ...p, gcash_number: e.target.value }))}
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs text-blue-900">Account Holder Name</Label>
-                  <Input
-                    className="mt-1 bg-white"
-                    placeholder="Your full name or business name"
-                    value={profileForm.gcash_name}
-                    onChange={e => setProfileForm(p => ({ ...p, gcash_name: e.target.value }))}
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs text-blue-900">GCash QR Code <span className="text-blue-700 font-normal">(mas ligtas: QR na lang ang ipapakita sa customers)</span></Label>
-                  {profileForm.gcash_qr_url ? (
-                    <div className="mt-1 flex items-center gap-3">
-                      <img src={profileForm.gcash_qr_url} alt="GCash QR" className="w-24 h-24 rounded-lg bg-white border object-contain" />
-                      <Button type="button" variant="outline" size="sm" className="rounded-full" onClick={() => setProfileForm(p => ({ ...p, gcash_qr_url: '' }))}>Alisin</Button>
-                    </div>
-                  ) : (
-                    <label className="mt-1 flex items-center justify-center gap-2 rounded-xl border-2 border-dashed border-blue-300 bg-white py-4 text-xs text-blue-700 cursor-pointer hover:bg-blue-50">
-                      {uploadingProfileImg === 'gcash_qr' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                      I-upload ang QR (screenshot mula sa GCash app)
-                      <input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) handleProfileImageUpload(f, 'gcash_qr'); }} />
-                    </label>
-                  )}
-                  <p className="mt-1 text-[11px] text-blue-700">Kapag may QR, hindi na ipapakita ang mobile number sa booking.</p>
-                </div>
+                <GcashModeFields tone="blue" value={profileForm} onChange={(patch) => setProfileForm(p => ({ ...p, ...patch }))} onBusyChange={(busy) => setUploadingProfileImg(busy ? 'gcash_qr' : null)} />
               </div>
             </>)}
             {saveError && <div className="flex gap-2 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />{saveError}</div>}
@@ -1204,13 +1177,13 @@ export default function AgencyDashboard() {
                 <p className="text-xs text-muted-foreground">{receiptBooking.user_name} · {receiptBooking.travel_date}</p>
                 <div className="flex justify-between pt-1 border-t mt-1"><span className="text-muted-foreground text-xs">Commission amount</span><span className="font-bold text-blue-700">P{Math.round((receiptBooking.actual_total_price || receiptBooking.total_price || 0) * commissionRate / 100).toLocaleString()} <span className="font-normal text-muted-foreground">({commissionRate}%)</span></span></div>
               </div>
-              <p className="text-xs text-muted-foreground bg-blue-50 border border-blue-200 rounded-xl px-3 py-2">I-send ang commission sa GCash number ng admin, tapos i-screenshot ang receipt at i-upload dito para ma-confirm ng admin.</p>
+              <p className="text-xs text-muted-foreground bg-blue-50 border border-blue-200 rounded-xl px-3 py-2">Send the commission to the admin's GCash number, then screenshot the receipt and upload it here so the admin can confirm.</p>
               <div>
                 <Label className="text-sm mb-2 block">GCash Receipt Screenshot *</Label>
                 {receiptPreview ? (
                   <div className="relative rounded-xl overflow-hidden border"><img src={receiptPreview} alt="Receipt preview" className="w-full object-contain max-h-64" /><button onClick={() => { setReceiptFile(null); setReceiptPreview(null); }} className="absolute top-2 right-2 w-7 h-7 bg-black/60 text-white rounded-full flex items-center justify-center hover:bg-black/80"><X className="w-4 h-4" /></button><div className="absolute bottom-2 left-2 bg-green-600 text-white text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1"><CheckCircle className="w-2.5 h-2.5" /> Receipt ready</div></div>
                 ) : (
-                  <label className="flex flex-col items-center justify-center w-full h-36 border-2 border-dashed rounded-xl cursor-pointer hover:bg-muted/50 transition-colors"><Upload className="w-8 h-8 text-muted-foreground mb-2" /><span className="text-sm text-muted-foreground">I-click para mag-upload ng screenshot</span><span className="text-xs text-muted-foreground mt-1">JPG, PNG — max 5MB</span><input type="file" accept="image/*" className="hidden" onChange={handleReceiptFileChange} /></label>
+                  <label className="flex flex-col items-center justify-center w-full h-36 border-2 border-dashed rounded-xl cursor-pointer hover:bg-muted/50 transition-colors"><Upload className="w-8 h-8 text-muted-foreground mb-2" /><span className="text-sm text-muted-foreground">Click to upload a screenshot</span><span className="text-xs text-muted-foreground mt-1">JPG, PNG — max 5MB</span><input type="file" accept="image/*" className="hidden" onChange={handleReceiptFileChange} /></label>
                 )}
               </div>
               {saveError && <div className="flex gap-2 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />{saveError}</div>}
@@ -1234,9 +1207,9 @@ export default function AgencyDashboard() {
                 <p className="text-xs text-muted-foreground">{completionBooking.user_name} · {completionBooking.travel_date}</p>
                 <p className="text-xs text-muted-foreground">Booked: {completionBooking.num_pax} pax · P{completionBooking.total_price?.toLocaleString()}</p>
               </div>
-              <div><Label className="text-sm">Actual Number of Participants *</Label><p className="text-[10px] text-muted-foreground mb-1">Ilang tao talaga ang dumating?</p><Input type="number" min="1" value={completionForm.actual_pax} onChange={e => setCompletionForm(p => ({ ...p, actual_pax: e.target.value }))} className="mt-1" placeholder={`e.g. ${completionBooking.num_pax}`} /></div>
+              <div><Label className="text-sm">Actual Number of Participants *</Label><p className="text-[10px] text-muted-foreground mb-1">How many people actually came?</p><Input type="number" min="1" value={completionForm.actual_pax} onChange={e => setCompletionForm(p => ({ ...p, actual_pax: e.target.value }))} className="mt-1" placeholder={`e.g. ${completionBooking.num_pax}`} /></div>
               <div>
-                <Label className="text-sm">Group / Trip Proof Photo *</Label><p className="text-[10px] text-muted-foreground mb-1">I-upload ang group photo o summit photo bilang proof</p>
+                <Label className="text-sm">Group / Trip Proof Photo *</Label><p className="text-[10px] text-muted-foreground mb-1">Upload a group photo or summit photo as proof</p>
                 {completionForm.proof_url ? (
                   <div className="relative mt-1 rounded-xl overflow-hidden border aspect-video bg-muted"><img src={completionForm.proof_url} alt="Proof" className="w-full h-full object-cover" /><button onClick={() => setCompletionForm(p => ({ ...p, proof_url: '' }))} className="absolute top-2 right-2 w-7 h-7 bg-black/60 text-white rounded-full flex items-center justify-center hover:bg-black/80"><X className="w-4 h-4" /></button><div className="absolute bottom-2 left-2 bg-green-600 text-white text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1"><CheckCircle className="w-2.5 h-2.5" /> Photo uploaded</div></div>
                 ) : (

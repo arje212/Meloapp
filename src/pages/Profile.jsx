@@ -326,7 +326,7 @@ export default function Profile() {
                 <div><Label>Bio</Label><Textarea value={editForm.bio} onChange={e => setEditForm(p => ({ ...p, bio: e.target.value }))} placeholder="Tell us about yourself..." className="mt-1" /></div>
                 <div><Label>Location</Label><Input value={editForm.location} onChange={e => setEditForm(p => ({ ...p, location: e.target.value }))} placeholder="e.g. Manila, Philippines" className="mt-1" /></div>
                 {saveError && <p className="text-xs text-destructive">{saveError}</p>}
-                {cropSrc && <ImageCropDialog src={cropSrc} onCancel={closeCrop} onDone={handleCropped} title="I-crop ang profile photo" />}
+                {cropSrc && <ImageCropDialog src={cropSrc} onCancel={closeCrop} onDone={handleCropped} title="Crop profile photo" />}
                 <Button className="w-full rounded-full" onClick={handleSaveProfile} disabled={isSaving || avatarUploading}>
                   {isSaving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null} Save
                 </Button>

@@ -5,22 +5,29 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Wallet, Edit2, CheckCircle2, Loader2, X } from 'lucide-react';
+import GcashModeFields, { gcashComplete } from '@/components/payments/GcashModeFields';
+import GcashPayCard from '@/components/payments/GcashPayCard';
 
 export default function TripPaymentSetup({ trip, isOrganizer }) {
   const qc = useQueryClient();
   const [editMode, setEditMode] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({
+  const [saveError, setSaveError] = useState('');
+  const [qrBusy, setQrBusy] = useState(false);
+  const fromTrip = () => ({
     price:            trip?.price            ?? '',
     gcash_number:     trip?.gcash_number     ?? '',
     gcash_name:       trip?.gcash_name       ?? '',
+    gcash_qr_url:     trip?.gcash_qr_url     ?? '',
+    gcash_display:    trip?.gcash_display    ?? (trip?.gcash_qr_url && !trip?.gcash_number ? 'qr' : 'number'),
     payment_required: trip?.payment_required ?? false,
   });
+  const [form, setForm] = useState(fromTrip);
 
   if (!isOrganizer && !trip?.payment_required) return null;
 
   const handleSave = async () => {
-    setSaving(true);
+    setSaving(true); setSaveError('');
     try {
       const { error } = await supabase
         .from('trips')
@@ -28,22 +35,31 @@ export default function TripPaymentSetup({ trip, isOrganizer }) {
           price:            form.price ? Number(form.price) : null,
           gcash_number:     form.gcash_number.trim()  || null,
           gcash_name:       form.gcash_name.trim()    || null,
+          gcash_qr_url:     form.gcash_qr_url         || null,
+          gcash_display:    form.gcash_display,
           payment_required: form.payment_required,
         })
         .eq('id', trip.id);
 
-      if (error) throw error;
+      if (error) {
+        // new columns missing in the database: say so instead of failing silently
+        if (/gcash_qr_url|gcash_display|column/i.test(error.message || '')) {
+          throw new Error('The QR option needs a database update. Ask the admin to run the latest migration.');
+        }
+        throw error;
+      }
 
       qc.invalidateQueries({ queryKey: ['trip', trip.id] });
       setEditMode(false);
     } catch (err) {
       console.error('Save payment setup error:', err);
+      setSaveError(err?.message || 'Could not save. Please try again.');
     } finally {
       setSaving(false);
     }
   };
 
-  const hasPaymentSetup = trip?.payment_required && trip?.gcash_number && trip?.price;
+  const hasPaymentSetup = trip?.payment_required && (trip?.gcash_number || trip?.gcash_qr_url) && trip?.price;
 
   return (
     <div className="bg-card border rounded-2xl p-5 mt-4">
@@ -63,12 +79,8 @@ export default function TripPaymentSetup({ trip, isOrganizer }) {
             variant="outline"
             className="rounded-full h-7 text-xs gap-1"
             onClick={() => {
-              setForm({
-                price:            trip?.price            ?? '',
-                gcash_number:     trip?.gcash_number     ?? '',
-                gcash_name:       trip?.gcash_name       ?? '',
-                payment_required: trip?.payment_required ?? false,
-              });
+              setForm(fromTrip());
+              setSaveError('');
               setEditMode(true);
             }}
           >
@@ -108,29 +120,11 @@ export default function TripPaymentSetup({ trip, isOrganizer }) {
                   className="mt-1 bg-background"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <Label className="text-xs">GCash Number *</Label>
-                  <Input
-                    placeholder="09XX XXX XXXX"
-                    value={form.gcash_number}
-                    onChange={e => setForm(p => ({ ...p, gcash_number: e.target.value }))}
-                    className="mt-1 bg-background"
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs">GCash Name *</Label>
-                  <Input
-                    placeholder="Account name"
-                    value={form.gcash_name}
-                    onChange={e => setForm(p => ({ ...p, gcash_name: e.target.value }))}
-                    className="mt-1 bg-background"
-                  />
-                </div>
-              </div>
+              <GcashModeFields value={form} onChange={(patch) => setForm(p => ({ ...p, ...patch }))} onBusyChange={setQrBusy} />
             </>
           )}
 
+          {saveError && <p className="text-xs text-destructive">{saveError}</p>}
           <div className="flex gap-2">
             <Button
               size="sm"
@@ -145,7 +139,7 @@ export default function TripPaymentSetup({ trip, isOrganizer }) {
               size="sm"
               className="flex-1 rounded-full"
               onClick={handleSave}
-              disabled={saving || (form.payment_required && (!form.price || !form.gcash_number || !form.gcash_name))}
+              disabled={saving || qrBusy || (form.payment_required && (!form.price || !gcashComplete(form)))}
             >
               {saving ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <CheckCircle2 className="w-3 h-3 mr-1" />}
               Save
@@ -157,15 +151,7 @@ export default function TripPaymentSetup({ trip, isOrganizer }) {
       {/* Display current payment setup (for members and organizer when not editing) */}
       {!editMode && hasPaymentSetup && (
         <div className="space-y-3">
-          <div className="bg-gradient-to-br from-blue-500 to-blue-700 text-white rounded-xl p-4">
-            <p className="text-xs font-medium opacity-80 mb-1">Send payment to</p>
-            <p className="text-2xl font-bold tracking-widest">{trip.gcash_number}</p>
-            <p className="text-sm opacity-90 mt-0.5">{trip.gcash_name}</p>
-            <div className="mt-3 pt-3 border-t border-white/20">
-              <p className="text-xs opacity-80">Amount</p>
-              <p className="text-xl font-bold">₱{Number(trip.price).toLocaleString()}</p>
-            </div>
-          </div>
+          <GcashPayCard mode={trip.gcash_display} number={trip.gcash_number} qrUrl={trip.gcash_qr_url} name={trip.gcash_name} amount={trip.price} />
           <p className="text-xs text-muted-foreground text-center">
             Send the exact amount via GCash then upload your receipt below.
           </p>
