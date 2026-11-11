@@ -124,7 +124,7 @@ export const ACHIEVEMENT_DEFINITIONS = {
 
 const unlocking = new Set(); // calls running right now (stops the same badge being created twice at once)
 
-export async function unlockAchievement(userEmail, userName, achievementKey) {
+export async function unlockAchievement(userEmail, userName, achievementKey, customDef) {
   const lockKey = `${userEmail}:${achievementKey}`;
   if (unlocking.has(lockKey)) return null;
   unlocking.add(lockKey);
@@ -136,7 +136,8 @@ export async function unlockAchievement(userEmail, userName, achievementKey) {
     });
     if (existing.length > 0) return null;
 
-    const def = ACHIEVEMENT_DEFINITIONS[achievementKey];
+    // customDef lets a caller define a one-off achievement (e.g. the review dialog's "Trail Writer")
+    const def = ACHIEVEMENT_DEFINITIONS[achievementKey] || customDef;
     if (!def) return null;
 
     const achievement = await base44.entities.Achievement.create({

@@ -10,6 +10,7 @@ export default function TripGallery({ trip, members = [] }) {
   const qc = useQueryClient();
   const fileRef = useRef(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
   const [lightbox, setLightbox] = useState(null);
 
   const isMember = members.some(m => m.user_email === user?.email);
@@ -33,7 +34,7 @@ export default function TripGallery({ trip, members = [] }) {
   const handleUpload = async (e) => {
     const files = Array.from(e.target.files);
     if (!files.length) return;
-    setUploading(true);
+    setUploading(true); setUploadError('');
     try {
       await Promise.all(
         files.slice(0, 5).map(async (file) => {
@@ -46,12 +47,13 @@ export default function TripGallery({ trip, members = [] }) {
             url,
             caption: '',
           });
-          if (error) console.error(error);
+          if (error) throw error;
         })
       );
       qc.invalidateQueries({ queryKey: ['trip-gallery', trip.id] });
     } catch (err) {
       console.error('Upload failed:', err);
+      setUploadError('Some photos could not be uploaded. Please try again.');
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = '';
@@ -96,6 +98,7 @@ export default function TripGallery({ trip, members = [] }) {
             </div>
           </label>
         )}
+        {uploadError && <p role="alert" className="text-xs text-destructive">{uploadError}</p>}
       </div>
 
       {isLoading ? (

@@ -1,6 +1,7 @@
 // Immersive achievement and gamification UI components
 import { useState, useEffect } from 'react';
-import { Badge, Button } from '@/components/ui/badge';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Flame, Star, Zap } from 'lucide-react';
 import confetti from 'canvas-confetti';
 

@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { ImagePlus, MapPin, Loader2, X, Film, Images, Globe, Users, Lock, Smile, Star, AlertTriangle } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { prepareImageFile } from '@/lib/prepareImage';
+import { prepareImageFile, downscaleImage } from '@/lib/prepareImage';
 import { useAuth } from '@/lib/AuthContext';
 import { useQuery } from '@tanstack/react-query';
 import { unlockAchievement } from '@/lib/achievements';
@@ -69,7 +69,7 @@ export default function CreatePostDialog({ open, onOpenChange, onCreated, initia
   });
 
   const uploadFile = async (original) => {
-    const file = await prepareImageFile(original); // iPhone HEIC -> JPEG so everyone can see it
+    const file = await downscaleImage(await prepareImageFile(original)); // HEIC -> JPEG, big photos shrunk
     const isVideo = file.type.startsWith('video/');
     const isImage = file.type.startsWith('image/');
     if (!isImage && !isVideo) throw new Error('Please choose an image or video file.');

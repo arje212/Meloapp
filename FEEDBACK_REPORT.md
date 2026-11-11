@@ -65,3 +65,17 @@ gawing `user_id` ang ginagamit saanman at itago ang email column sa ibang user. 
 - Ang "Burahin ang account" ay request lang (nasa `account_deletion_requests`); ikaw/admin ang magbubura nang manu-mano. Hindi ko nabura nang awtomatiko ang data dahil nakakalat ito sa maraming table.
 - Ang GCash QR ay para sa **agency booking**. Ang trip ng ordinaryong user (TripPayment) ay may sariling GCash number pa rin.
 - Hindi ko nasubukan sa tunay na phone; ang mga test ko ay lint, build, 24 unit tests, at mga simulated na test ng mga Edge Function.
+
+---
+# Round 2 (v5)
+- **GCash: QR code or mobile number (your choice).** Trip Payment (organizer) and the agency dashboard both have a
+  "What should customers see when paying?" switch: **QR code** or **Mobile number**. With QR, the number is never shown.
+  Members and customers see the QR (or the number) on the payment card. Needs the SQL in `20261109_feedback_round.sql` (section 6).
+- **English only.** All app text, error messages, notifications, push previews and booking emails are now English.
+- **Notifications and the app closing (video):** in your recording the notification switch is changed in the phone's
+  *Settings → App info*. Android closes an app when its permission is changed from system Settings, so the app restarts the
+  next time you open it. That is Android, not a crash, and the app opened normally afterwards. To avoid it, turn notifications
+  on from inside the app (**Profile → Settings → Notifications → Turn on notifications**), which shows the system prompt without closing the app.
+  If it still closes when you tap Allow inside the app, send the `adb logcat *:E` output (see PUSH_SETUP.md).
+- **Reels** show a thumbnail frame instead of a black box (they often start from a black fade-in).
+- The Android build now prints a warning when `google-services.json` is missing (push cannot work without it).

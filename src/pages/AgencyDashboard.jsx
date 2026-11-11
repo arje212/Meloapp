@@ -1,3 +1,4 @@
+import ImageField from '@/components/ImageField';
 import GcashModeFields from '@/components/payments/GcashModeFields';
 import { useState, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -1327,7 +1328,7 @@ export default function AgencyDashboard() {
               </div>
             </div>
             
-            <div><Label>Cover Image URL</Label><Input value={pkgForm.image_url} onChange={e => setPkgForm(p => ({ ...p, image_url: e.target.value }))} placeholder="https://..." className="mt-1" /></div>
+            <ImageField label="Cover photo" folder="packages" value={pkgForm.image_url} onChange={(url) => setPkgForm(p => ({ ...p, image_url: url }))} />
             {saveError && <div className="flex gap-2 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />{saveError}</div>}
             <Button className="w-full rounded-full" onClick={handleSavePkg} disabled={!pkgForm.title || !pkgForm.price || !pkgForm.mountain_name || !pkgForm.nature_spots?.trim() || saving}>{saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null} {editPkg ? 'Save Changes' : 'Create Package'}</Button>
           </div>

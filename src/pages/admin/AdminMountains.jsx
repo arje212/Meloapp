@@ -1,3 +1,4 @@
+import ImageField from '@/components/ImageField';
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
@@ -189,7 +190,7 @@ export default function AdminMountains() {
                 </Select>
               </div>
 
-              <div><Label>Image URL</Label><Input value={editMtn.image_url} onChange={e => setEditMtn(p => ({ ...p, image_url: e.target.value }))} placeholder="https://..." /></div>
+              <ImageField label="Mountain photo" folder="mountains" value={editMtn.image_url} onChange={(url) => setEditMtn(p => ({ ...p, image_url: url }))} />
               <div><Label>Description</Label><Textarea value={editMtn.description} onChange={e => setEditMtn(p => ({ ...p, description: e.target.value }))} rows={4} /></div>
 
               <Button className="w-full rounded-full" onClick={handleSave} disabled={isSaving}>

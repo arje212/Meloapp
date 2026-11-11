@@ -17,7 +17,7 @@ import {
   Pin, PinOff, ChevronUp,
 } from 'lucide-react';
 import { format } from 'date-fns';
-import { prepareImageFile } from '@/lib/prepareImage';
+import { prepareImageFile, downscaleImage } from '@/lib/prepareImage';
 import { fetchProfilesByEmails } from '@/lib/profileLookup';
 import {
   parseContent, buildContent, buildVoiceContent,
@@ -592,7 +592,7 @@ function MessageBubble({ msg, isMe, isFirst, isLast, isGroup, isPinned, canPin, 
 }
 
 // ─── Members dialog ───────────────────────────────────────────────────────────
-function MembersDialog({ open, onOpenChange, room, currentUserEmail, qc, roomId }) {
+function MembersDialog({ open, onOpenChange, room, currentUserEmail, qc, roomId, profiles = {} }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
@@ -663,8 +663,8 @@ function MembersDialog({ open, onOpenChange, room, currentUserEmail, qc, roomId 
                 return (
                   <div key={email} className="flex items-center gap-2.5 px-3 py-2.5 bg-gray-50 dark:bg-gray-800/60 rounded-xl">
                     <Avatar className="w-8 h-8 shrink-0">
-                      {participantProfiles[String(email).toLowerCase()]?.avatar_url
-                        ? <img src={participantProfiles[String(email).toLowerCase()].avatar_url} alt="" className="w-full h-full object-cover rounded-full" />
+                      {profiles[String(email).toLowerCase()]?.avatar_url
+                        ? <img src={profiles[String(email).toLowerCase()].avatar_url} alt="" className="w-full h-full object-cover rounded-full" />
                         : (
                           <AvatarFallback className="text-xs font-bold bg-gradient-to-br from-sky-400 to-blue-500 text-white">
                             {getInitials(name)}
@@ -928,7 +928,7 @@ export default function ChatRoom() {
     e.target.value = '';
     if (!picked) return;
     let file = picked;
-    try { file = await prepareImageFile(picked); }   // iPhone HEIC -> JPEG
+    try { file = await downscaleImage(await prepareImageFile(picked)); }   // HEIC -> JPEG, big photos shrunk
     catch (err) { alert(err.message); return; }
     const isVid = file.type.startsWith('video/');
     const isImg = file.type.startsWith('image/');
@@ -1272,6 +1272,7 @@ export default function ChatRoom() {
         currentUserEmail={user.email}
         qc={qc}
         roomId={roomId}
+        profiles={participantProfiles}
       />
     </div>
   );

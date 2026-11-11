@@ -393,7 +393,31 @@ function SingleImage({ src }) {
 // 1x1 transparent poster: stops Android WebView from drawing its giant default "play" placeholder.
 const BLANK_POSTER = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
 
-function ReelMedia({ src, isReel }) {
+const compact = (n) => {
+  const v = Number(n) || 0;
+  if (v >= 1e6) return `${(v / 1e6).toFixed(1).replace(/\.0$/, '')}M`;
+  if (v >= 1e3) return `${(v / 1e3).toFixed(1).replace(/\.0$/, '')}K`;
+  return String(v);
+};
+
+function SideButton({ label, active, activeClass = '', onClick, disabled, children, aria }) {
+  return (
+    <button
+      type="button"
+      aria-label={aria}
+      disabled={disabled}
+      onClick={(e) => { e.stopPropagation(); onClick?.(); }}
+      className="flex flex-col items-center gap-1 text-white disabled:opacity-60"
+    >
+      <span className={`w-11 h-11 rounded-full bg-black/45 backdrop-blur-sm flex items-center justify-center transition-transform active:scale-90 ${active ? activeClass : ''}`}>
+        {children}
+      </span>
+      {label !== undefined && <span className="text-xs font-semibold drop-shadow">{label}</span>}
+    </button>
+  );
+}
+
+export function ReelMedia({ src, isReel, actions }) {
   const videoRef = useRef(null);
   const containerRef = useRef(null);
   const [playing, setPlaying] = useState(false);
@@ -402,8 +426,16 @@ function ReelMedia({ src, isReel }) {
   const [ready, setReady] = useState(false);      // first frame decoded
   const [failed, setFailed] = useState(false);
   const startedRef = useRef(false); // true once playback has started (until then we show a thumbnail frame)
+  const [tapped, setTapped] = useState(false);   // side buttons show for a few seconds after a tap
+  const hideTimer = useRef(null);
+  useEffect(() => () => clearTimeout(hideTimer.current), []);
+  const reveal = () => {
+    setTapped(true);
+    clearTimeout(hideTimer.current);
+    hideTimer.current = setTimeout(() => setTapped(false), 3500);
+  };
   // Follow the real video shape: landscape stays landscape, portrait stays portrait.
-  const [ratio, setRatio] = useState(isReel ? 9 / 16 : 16 / 9);
+  const [ratio, setRatio] = useState(isReel ? 0.75 : 16 / 9);
 
   // "#t=0.1" makes the browser paint a frame as the thumbnail, so a video is visible while scrolling.
   const videoSrc = src && !src.includes('#') ? `${src}#t=0.1` : src;
@@ -426,7 +458,8 @@ function ReelMedia({ src, isReel }) {
   const onMeta = (e) => {
     const v = e.currentTarget;
     const { videoWidth: w, videoHeight: h } = v;
-    if (w && h) setRatio(Math.min(16 / 9, Math.max(9 / 16, w / h))); // clamp extreme shapes
+    // Box follows the video shape but never gets taller than 2:3 or wider than 16:9; the video then fills it edge to edge
+    if (w && h) setRatio(Math.min(16 / 9, Math.max(0.66, w / h)));
     // Many videos fade in from black: show a frame a little way in as the thumbnail
     if (!startedRef.current && v.duration > 3) v.currentTime = Math.min(1, v.duration / 3);
   };
@@ -437,6 +470,7 @@ function ReelMedia({ src, isReel }) {
     if (!v || failed) return;
     if (v.paused) { v.play().then(() => setPlaying(true)).catch(() => {}); }
     else { v.pause(); setPlaying(false); }
+    reveal();
   };
   const toggleMute = (e) => {
     e.stopPropagation();
@@ -473,8 +507,8 @@ function ReelMedia({ src, isReel }) {
   return (
     <div
       ref={containerRef}
-      className="relative mx-auto w-full max-w-full bg-black overflow-hidden cursor-pointer select-none flex items-center justify-center"
-      style={{ aspectRatio: String(ratio), maxHeight: '75vh' }}
+      className="relative w-full bg-black overflow-hidden cursor-pointer select-none"
+      style={{ aspectRatio: String(ratio) }}
       onClick={toggle}
     >
       {!ready && !failed && <div className="absolute inset-0 animate-pulse bg-muted-foreground/20" />}
@@ -483,7 +517,7 @@ function ReelMedia({ src, isReel }) {
         ref={videoRef}
         src={videoSrc}
         poster={BLANK_POSTER}
-        className="block w-full h-full object-contain object-center bg-black"
+        className="block w-full h-full object-cover object-center bg-black"
         muted={muted}
         loop playsInline preload="auto"
         onLoadedMetadata={onMeta}
@@ -505,6 +539,24 @@ function ReelMedia({ src, isReel }) {
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/80 text-white text-sm">
           <p>This video cannot be played.</p>
           <button onClick={retry} className="px-4 py-1.5 rounded-full bg-white/20 hover:bg-white/30 font-semibold">Try again</button>
+        </div>
+      )}
+
+      {/* Side buttons (like / comment / share / save): shown after a tap, and while paused */}
+      {actions && !failed && (tapped || !playing) && (
+        <div className="absolute right-2 bottom-16 flex flex-col items-center gap-4">
+          <SideButton aria={actions.liked ? 'Unlike' : 'Like'} label={compact(actions.likesCount)} active={actions.liked} activeClass="bg-red-500/90" onClick={actions.onLike} disabled={actions.likeDisabled}>
+            <Heart className={`w-6 h-6 ${actions.liked ? 'fill-white' : ''}`} />
+          </SideButton>
+          <SideButton aria="Comments" label={compact(actions.commentsCount)} onClick={actions.onComment}>
+            <MessageCircle className="w-6 h-6" />
+          </SideButton>
+          <SideButton aria="Share" onClick={actions.onShare}>
+            <Share2 className="w-6 h-6" />
+          </SideButton>
+          <SideButton aria={actions.saved ? 'Remove from saved' : 'Save'} active={actions.saved} activeClass="bg-white/90 text-black" onClick={actions.onSave}>
+            <Bookmark className={`w-6 h-6 ${actions.saved ? 'fill-current' : ''}`} />
+          </SideButton>
         </div>
       )}
 
@@ -737,6 +789,32 @@ export default function PostCard({ post, onComment }) {
   const [showShare, setShowShare] = useState(false);
   const [showMore, setShowMore]   = useState(false);
 
+  // Save (bookmark) from the video's side buttons; same list the Share menu uses
+  const savedIdsKey = ['saved-post-ids', user?.id];
+  const { data: savedIdsForVideo = [] } = useQuery({
+    queryKey: savedIdsKey,
+    enabled: !!user?.id && (post.is_reel === true || isVideoMedia(post.media_type)),
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('saved_posts').select('post_id').eq('user_id', user.id).limit(1000);
+      if (error) throw error;
+      return (data || []).map((r) => r.post_id);
+    },
+  });
+  const isVideoSaved = savedIdsForVideo.includes(post.id);
+  const handleSaveVideo = async () => {
+    if (!user?.id) return;
+    const was = isVideoSaved;
+    const apply = (on) => queryClient.setQueryData(savedIdsKey, (ids = []) => (on ? [...new Set([...ids, post.id])] : ids.filter((i) => i !== post.id)));
+    apply(!was);
+    const r = was
+      ? await supabase.from('saved_posts').delete().eq('user_id', user.id).eq('post_id', post.id)
+      : await supabase.from('saved_posts').insert({ user_id: user.id, post_id: post.id });
+    if (r.error && r.error.code !== '23505') { apply(was); return; }
+    queryClient.invalidateQueries({ queryKey: ['saved-posts', user.id] });
+  };
+
   const authorName  = post.profiles?.full_name || 'Unknown';
   const authorEmail = post.profiles?.email || '';
   const authorId    = post.author_id;
@@ -856,7 +934,17 @@ export default function PostCard({ post, onComment }) {
       {/* Media */}
       {!isTripPost && (
         (isReel || isVideo) && post.image_url ? (
-          <ReelMedia src={post.image_url} isReel={isReel} />
+          <ReelMedia
+            src={post.image_url}
+            isReel={isReel}
+            actions={{
+              liked, likesCount, commentsCount: post.comments_count || 0,
+              onLike: handleHeart, likeDisabled: likeLoading || !likesReady,
+              onComment: () => onComment?.(post),
+              onShare: () => { setShowShare(true); setShowMore(false); },
+              saved: isVideoSaved, onSave: handleSaveVideo,
+            }}
+          />
         ) : isPackagePromo && ['collage', 'grid'].includes(packagePost?.details?.photo_layout) && (isCarousel || post.image_url) ? (
           <PackagePhotoLayout
             images={isCarousel ? post.post_images : [post.image_url]}

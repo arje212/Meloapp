@@ -18,13 +18,16 @@ export default [
     files: [
       "src/components/**/*.{js,mjs,cjs,jsx}",
       "src/pages/**/*.{js,mjs,cjs,jsx}",
+      "src/lib/**/*.{js,mjs,cjs,jsx}",
+      "src/api/**/*.{js,mjs,cjs,jsx}",
       "src/Layout.jsx",
+      "src/App.jsx",
     ],
-    ignores: ["src/lib/**/*", "src/components/ui/**/*"],
+    ignores: ["src/components/ui/**/*"],
     ...pluginJs.configs.recommended,
     ...pluginReact.configs.flat.recommended,
     languageOptions: {
-      globals: globals.browser,
+      globals: { ...globals.browser, ...globals.node, ...globals.vitest },
       parserOptions: {
         ecmaVersion: 2022,
         sourceType: "module",
@@ -44,6 +47,11 @@ export default [
       "unused-imports": pluginUnusedImports,
     },
     rules: {
+      ...pluginJs.configs.recommended.rules,   // keeps no-undef etc. (they were being wiped out before)
+      "no-empty": "warn",
+      "no-useless-escape": "warn",
+      "no-prototype-builtins": "warn",
+      "no-case-declarations": "warn",
       "no-unused-vars": "off",
       "react/jsx-uses-vars": "error",
       "react/jsx-uses-react": "error",
@@ -64,6 +72,7 @@ export default [
         { ignore: ["cmdk-input-wrapper", "toast-close"] },
       ],
       "react-hooks/rules-of-hooks": "error",
+      "react-hooks/exhaustive-deps": "warn",
     },
   },
 ];
